@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lemonaid | NHTSA API check</title>
+<style>
+  body{margin:0;font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,"Helvetica Neue",sans-serif;background:#FAFAFA;color:#242424}
+  main{max-width:760px;margin:0 auto;padding:24px 16px}
+  h1{font-size:24px;margin:0 0 4px}
+  p{margin:0 0 16px;color:#616161}
+  form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  label{display:flex;flex-direction:column;font-size:13px;gap:4px}
+  input{font:inherit;padding:8px 10px;border:1px solid #D1D1D1;border-radius:6px;min-width:0}
+  #vin{font-family:Consolas,monospace;letter-spacing:1px;width:220px}
+  button{font:inherit;font-weight:600;padding:10px 18px;border:0;border-radius:6px;background:#FFB900;color:#241A00;cursor:pointer;align-self:flex-end}
+  button:hover{background:#E0A200}
+  ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  li{background:#fff;border:1px solid #E0E0E0;border-radius:8px;padding:12px}
+  .name{font-weight:600}
+  .url{font:12px Consolas,monospace;color:#616161;word-break:break-all}
+  .status{margin-top:6px}
+  .pass{color:#0E700E}.fail{color:#B10E1C}.wait{color:#616161}
+  #summary{margin-top:16px;padding:12px;border-radius:8px;background:#FFF9EF;border:1px solid #FFB900}
+</style>
+</head>
+<body>
+<main>
+  <h1>NHTSA API check</h1>
+  <p>Open this page from your live GitHub Pages link. It checks whether each free NHTSA endpoint can be called straight from the browser (no server, no API key).</p>
+  <form id="f">
+    <label>Year <input id="year" value="2018" inputmode="numeric" size="5"></label>
+    <label>Make <input id="make" value="Honda" size="10"></label>
+    <label>Model <input id="model" value="Accord" size="10"></label>
+    <label>VIN <input id="vin" value="1HGCV1F30JA000000" maxlength="17"></label>
+    <button type="submit">Run checks</button>
+  </form>
+  <ul id="results"></ul>
+  <div id="summary" hidden></div>
+</main>
+<script>
+const enc = encodeURIComponent;
+function checks() {
+  const y = document.getElementById('year').value.trim();
+  const mk = document.getElementById('make').value.trim();
+  const md = document.getElementById('model').value.trim();
+  const vin = document.getElementById('vin').value.trim().toUpperCase();
+  return [
+    { name: 'vPIC: models for make + year', url: `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${enc(mk)}/modelyear/${enc(y)}?format=json`,
+      count: d => `${d.Count} models` },
+    { name: 'vPIC: decode VIN', url: `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${enc(vin)}?format=json`,
+      count: d => { const r = d.Results && d.Results[0] || {}; return `${r.ModelYear || '?'} ${r.Make || '?'} ${r.Model || '?'} (ErrorCode ${r.ErrorCode})`; } },
+    { name: 'Recalls: model names NHTSA uses', url: `https://api.nhtsa.gov/products/vehicle/models?modelYear=${enc(y)}&make=${enc(mk)}&issueType=r`,
+      count: d => `${d.count ?? (d.results || []).length} models` },
+    { name: 'Recalls by vehicle', url: `https://api.nhtsa.gov/recalls/recallsByVehicle?make=${enc(mk)}&model=${enc(md)}&modelYear=${enc(y)}`,
+      count: d => `${d.Count ?? (d.results || []).length} recalls` },
+    { name: 'Complaints by vehicle', url: `https://api.nhtsa.gov/complaints/complaintsByVehicle?make=${enc(mk)}&model=${enc(md)}&modelYear=${enc(y)}`,
+      count: d => `${d.count ?? (d.results || []).length} complaints` }
+  ];
+}
+async function run(e) {
+  if (e) e.preventDefault();
+  const list = document.getElementById('results');
+  const summary = document.getElementById('summary');
+  list.innerHTML = ''; summary.hidden = true;
+  const items = checks();
+  const rows = items.map(c => {
+    const li = document.createElement('li');
+    li.innerHTML = `<div class="name"></div><div class="url"></div><div class="status wait">Checking…</div>`;
+    li.querySelector('.name').textContent = c.name;
+    li.querySelector('.url').textContent = c.url;
+    list.append(li);
+    return li.querySelector('.status');
+  });
+  const outcomes = await Promise.all(items.map(async (c, i) => {
+    const el = rows[i];
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(c.url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      el.className = 'status pass';
+      el.textContent = `✔ Works from the browser: ${c.count(data)}`;
+      return true;
+    } catch (err) {
+      el.className = 'status fail';
+      el.textContent = err.name === 'AbortError'
+        ? '✘ Timed out after 15 seconds. Try again; if it keeps failing, the service may be down.'
+        : err instanceof TypeError
+          ? '✘ Blocked. Open the browser console (F12): "blocked by CORS policy" means this endpoint needs a server and cannot be used on GitHub Pages.'
+          : `✘ ${err.message}`;
+      return false;
+    } finally { clearTimeout(timer); }
+  }));
+  const ok = outcomes.filter(Boolean).length;
+  summary.hidden = false;
+  summary.textContent = ok === items.length
+    ? `All ${ok} checks passed. The Lemonaid plan works on GitHub Pages.`
+    : `${ok} of ${items.length} checks passed. Screenshot this page and the console, then decide which features to keep before building on the failing ones.`;
+}
+document.getElementById('f').addEventListener('submit', run);
+run();
+</script>
+</body>
+</html>
