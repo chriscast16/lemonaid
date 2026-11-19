@@ -102,13 +102,23 @@ const COMPONENT_TRANSLATIONS = [
   { key: "WHEEL", title: "Wheels: rim damage or loosening lug nuts affecting stability" },
   { key: "VISIBILITY/WIPER", title: "Windshield wipers: wipers may fail during adverse weather" },
   { key: "BACK OVER PREVENTION", title: "Backup camera: rearview screen may fail to display" },
+  { key: "CAMERA", title: "Backup camera: rearview screen may fail to display" },
   { key: "FORWARD COLLISION", title: "Collision avoidance sensors: automatic emergency braking malfunction" },
   { key: "VISIBILITY", title: "Visibility & glass: camera, defrost, or window failure" },
-  { key: "LATCH", title: "Latches & locks: door or hood may open unexpectedly while driving" },
+  { key: "EXTERIOR LIGHTING", title: "Exterior lighting: headlights or exterior lamps may fail or not dim properly" },
+  { key: "LIGHTING", title: "Exterior lighting: headlights, brake lights, or turn signals may fail" },
+  { key: "POWER TRAIN", title: "Powertrain & transmission: unexpected gear shift, rollaway, or loss of drive power" },
+  { key: "TRANSMISSION", title: "Transmission: risk of unexpected gear selection, rollaway, or loss of drive" },
+  { key: "TAILGATE", title: "Tailgate latch: tailgate may unlatch unexpectedly while driving" },
+  { key: "LATCH", title: "Door & tailgate latches: doors or tailgate may open unexpectedly while driving" },
+  { key: "LOCK", title: "Door locks & latches: doors may open unexpectedly while driving" },
+  { key: "EQUIPMENT:OTHER:LABELS", title: "Safety labels: missing warning labels or occupant instructions" },
+  { key: "LABEL", title: "Safety labels: missing warning labels or critical instructions" },
+  { key: "ELECTRONIC STABILITY", title: "Electronic stability control: traction system may fail to prevent skids" },
   { key: "STRUCTURE", title: "Vehicle structure & frame: weld defect or corrosion affecting safety" },
   { key: "CHILD SEAT", title: "Child safety seat anchors: child seat may not secure correctly" },
-  { key: "LIGHTING", title: "Exterior lighting: headlights, brake lights, or turn signals may fail" },
-  { key: "POWER TRAIN", title: "Powertrain & transmission: sudden loss of drive power or rollaway" }
+  { key: "HYBRID", title: "High-voltage battery & electrical: risk of battery overheating, stall, or shock" },
+  { key: "DEFROST", title: "Windshield defrosting & defogging: reduced visibility in cold or wet weather" }
 ];
 
 // ==========================================
@@ -131,6 +141,7 @@ const state = {
     loading: false,
     error: null,
     modelSelectionNeeded: false,
+    dataUnavailable: false,
     nhtsaRecallModels: [],
     selectedNhtsaModel: null,
     recalls: null,
@@ -385,7 +396,8 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
     loading: true,
     error: null,
     modelSelectionNeeded: false,
-    nhtsaRecallModels: [],
+    dataUnavailable: false,
+    nhtsaRecallModels: state.recallsState.nhtsaRecallModels || [],
     selectedNhtsaModel: manualModelChoice || null,
     recalls: null,
     fetchTimestamp: null
@@ -409,57 +421,67 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
       }
 
       const rawList = (recallModelsData && (recallModelsData.results || recallModelsData.Results)) || [];
-      const recallModels = rawList.map(item => {
-        if (typeof item === "string") return item;
-        return item.model || item.Model || item.modelName || item.ModelName || "";
-      }).filter(Boolean);
+      const recallModels = [...new Set(rawList.map(item => {
+        if (typeof item === "string") return item.trim();
+        return (item.model || item.Model || item.modelName || item.ModelName || "").trim();
+      }).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
       state.recallsState.nhtsaRecallModels = recallModels;
 
-      if (recallModels.length > 0) {
-        // Attempt match
-        const normTarget = normalizeModelString(targetModel);
-        
-        // Exact case-insensitive match
-        const exactMatch = recallModels.find(m => m.trim().toLowerCase() === targetModel.toLowerCase());
-        
-        // Normalized alphanumeric match (e.g. "F-150" vs "F150" or "CR-V" vs "CRV")
-        const normMatch = exactMatch || recallModels.find(m => normalizeModelString(m) === normTarget);
-
-        // Substring / prefix match if unique (e.g. "Accord" when list has "ACCORD")
-        const prefixMatch = normMatch || (
-          recallModels.filter(m => normalizeModelString(m).includes(normTarget) || normTarget.includes(normalizeModelString(m))).length === 1
-            ? recallModels.find(m => normalizeModelString(m).includes(normTarget) || normTarget.includes(normalizeModelString(m)))
-            : null
-        );
-
-        if (prefixMatch) {
-          matchedRecallModel = prefixMatch;
-          state.recallsState.selectedNhtsaModel = matchedRecallModel;
-        } else {
-          // Model did NOT match NHTSA recall model list:
-          // Never show "0 recalls". Prompt the user to pick the right model!
-          state.recallsState.loading = false;
-          state.recallsState.modelSelectionNeeded = true;
-          renderActiveView();
-          return;
-        }
-      } else {
-        // If NHTSA returned 0 recall models for this make/year, try query with vehicle.model
-        matchedRecallModel = targetModel;
-        state.recallsState.selectedNhtsaModel = matchedRecallModel;
+      if (recallModels.length === 0) {
+        // NHTSA returned 0 model records on file for this make and year in its recall directory
+        state.recallsState.loading = false;
+        state.recallsState.dataUnavailable = true;
+        state.recallsState.error = null;
+        state.recallsState.recalls = null;
+        state.recallsState.modelSelectionNeeded = false;
+        renderActiveView();
+        return;
       }
+
+      // Attempt matching against NHTSA recall model list
+      const normTarget = normalizeModelString(targetModel);
+
+      // 1. Exact case-insensitive match
+      const exactMatch = recallModels.find(m => m.trim().toLowerCase() === targetModel.toLowerCase());
+
+      // 2. Normalized alphanumeric match (e.g. "F-150" vs "F150" or "CR-V" vs "CRV")
+      const normMatch = exactMatch || recallModels.find(m => normalizeModelString(m) === normTarget);
+
+      // 3. Unique prefix or substring match if unambiguous
+      const candidates = recallModels.filter(m => {
+        const nm = normalizeModelString(m);
+        return nm === normTarget || nm.startsWith(normTarget) || normTarget.startsWith(nm);
+      });
+      const prefixMatch = normMatch || (candidates.length === 1 ? candidates[0] : null);
+
+      if (prefixMatch) {
+        matchedRecallModel = prefixMatch;
+        state.recallsState.selectedNhtsaModel = matchedRecallModel;
+      } else {
+        // Model did NOT match NHTSA recall model list:
+        // Never show "0 recalls". Prompt the user to pick the right model!
+        state.recallsState.loading = false;
+        state.recallsState.modelSelectionNeeded = true;
+        state.recallsState.selectedNhtsaModel = null;
+        state.recallsState.recalls = null;
+        renderActiveView();
+        return;
+      }
+    } else {
+      state.recallsState.selectedNhtsaModel = matchedRecallModel;
     }
 
     // Step 2: Fetch recalls for the matched/selected model
     const queryModel = matchedRecallModel || targetModel;
     const recallsUrl = `https://api.nhtsa.gov/recalls/recallsByVehicle?make=${encodeURIComponent(make)}&model=${encodeURIComponent(queryModel)}&modelYear=${encodeURIComponent(year)}`;
-    
+
     const recallResults = await fetchWithTimeout(recallsUrl);
     const recalls = (recallResults && (recallResults.results || recallResults.Results)) || [];
 
     state.recallsState.loading = false;
     state.recallsState.error = null;
+    state.recallsState.dataUnavailable = false;
     state.recallsState.modelSelectionNeeded = false;
     state.recallsState.recalls = recalls;
     state.recallsState.fetchTimestamp = new Date().toLocaleString([], {
@@ -474,6 +496,27 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
   renderActiveView();
 }
 
+async function promptModelSelection() {
+  if (!state.vehicle) return;
+  state.recallsState.modelSelectionNeeded = true;
+  state.recallsState.recalls = null;
+  if (!state.recallsState.nhtsaRecallModels || state.recallsState.nhtsaRecallModels.length === 0) {
+    state.recallsState.loading = true;
+    renderActiveView();
+    try {
+      const modelsUrl = `https://api.nhtsa.gov/products/vehicle/models?modelYear=${encodeURIComponent(state.vehicle.year.trim())}&make=${encodeURIComponent(state.vehicle.make.trim())}&issueType=r`;
+      const data = await fetchWithTimeout(modelsUrl);
+      const rawList = (data && (data.results || data.Results)) || [];
+      state.recallsState.nhtsaRecallModels = [...new Set(rawList.map(item => {
+        if (typeof item === "string") return item.trim();
+        return (item.model || item.Model || item.modelName || item.ModelName || "").trim();
+      }).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    } catch {}
+    state.recallsState.loading = false;
+  }
+  renderActiveView();
+}
+
 function normalizeModelString(str) {
   return (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -485,6 +528,10 @@ function translateRecall(recall) {
   const rawConsequence = (recall.Conequence || recall.Consequence || "").trim();
   const rawRemedy = (recall.Remedy || "").trim();
   const campaignNumber = recall.NHTSACampaignNumber || "NHTSA Campaign";
+  const reportDate = recall.ReportReceivedDate || "";
+  const notes = recall.Notes || "";
+  const parkIt = Boolean(recall.parkIt);
+  const parkOutSide = Boolean(recall.parkOutSide);
 
   // Translate component title
   let plainTitle = "";
@@ -496,36 +543,40 @@ function translateRecall(recall) {
     }
   }
   if (!plainTitle) {
-    plainTitle = `${capitalizeWords(component)}: safety component defect`;
+    const cleaned = component.replace(/[:\/_]+/g, " - ").replace(/\s+/g, " ").trim();
+    plainTitle = `${capitalizeWords(cleaned)}: safety component defect`;
   }
 
   // Plain-English Risk
   let plainRisk = rawConsequence;
   if (!plainRisk) {
-    plainRisk = summary ? summary.substring(0, 180) + "..." : "Increases the risk of a crash, injury, or unexpected vehicle stall.";
+    plainRisk = summary ? (summary.length > 200 ? summary.substring(0, 200) + "…" : summary) : "Increases the risk of a crash, injury, or unexpected vehicle stall.";
   }
 
   // Plain-English Remedy
   let plainRemedy = rawRemedy;
   if (!plainRemedy) {
-    plainRemedy = "Authorized dealers will inspect and repair the defective components free of charge.";
-  } else if (!plainRemedy.toLowerCase().includes("free")) {
-    plainRemedy += " (By federal law, safety recall repairs are provided free of charge by authorized dealerships.)";
+    plainRemedy = "Authorized franchise dealerships will inspect and repair the defective components free of charge.";
+  } else if (!plainRemedy.toLowerCase().includes("free of charge") && !plainRemedy.toLowerCase().includes("free")) {
+    plainRemedy += " (By federal law, safety recall repairs are provided free of charge by authorized franchise dealerships.)";
   }
 
-  const isHighSeverity = /crash|fire|injury|stall|loss of steering|loss of brake/i.test(plainRisk + plainTitle);
+  const isHighSeverity = parkIt || parkOutSide || /crash|fire|injury|injuries|stall|loss of steering|loss of brake|rollaway|unintended/i.test(plainRisk + plainTitle);
 
   return {
     campaignNumber,
     component,
+    reportDate,
     plainTitle,
     plainRisk,
     plainRemedy,
     isHighSeverity,
+    parkIt,
+    parkOutSide,
     rawSummary: summary,
     rawConsequence: rawConsequence,
     rawRemedy: rawRemedy,
-    rawNotes: recall.Notes || ""
+    rawNotes: notes
   };
 }
 
@@ -1147,7 +1198,10 @@ function renderOverviewPage(container) {
   const recalls = state.recallsState.recalls;
   const recallLoading = state.recallsState.loading;
   const recallError = state.recallsState.error;
+  const recallDataUnavailable = state.recallsState.dataUnavailable;
   const recallModelMismatch = state.recallsState.modelSelectionNeeded;
+  const nhtsaModels = state.recallsState.nhtsaRecallModels || [];
+  const selectedModel = state.recallsState.selectedNhtsaModel || v.model;
 
   page.innerHTML = `
     <!-- Breadcrumbs -->
@@ -1279,12 +1333,16 @@ function renderOverviewPage(container) {
               <span class="status-pill info">Checking…</span>
             ` : recallError ? `
               <span class="status-pill serious">Check failed</span>
+            ` : recallDataUnavailable ? `
+              <span class="status-pill info">Data unavailable</span>
             ` : recallModelMismatch ? `
-              <span class="status-pill warning">Model select</span>
-            ` : recalls && recalls.length > 0 ? `
+              <span class="status-pill warning">Model select needed</span>
+            ` : (recalls !== null && recalls.length > 0) ? `
               <span class="status-pill warning">⚠️ ${recalls.length} recall${recalls.length === 1 ? "" : "s"}</span>
-            ` : `
+            ` : (recalls !== null && recalls.length === 0) ? `
               <span class="status-pill good">✔ 0 recalls on file</span>
+            ` : `
+              <span class="status-pill info">Not checked</span>
             `}
           </div>
 
@@ -1296,38 +1354,73 @@ function renderOverviewPage(container) {
                 <span>Connecting to NHTSA recall database…</span>
               </div>
             ` : recallError ? `
-              <div class="alert alert-serious" style="padding: 10px 12px; font-size: 13px;">
+              <div class="alert alert-serious" style="padding: 12px; font-size: 13px;">
                 <span class="alert-icon" aria-hidden="true">⚠️</span>
                 <div class="alert-content">
                   <strong>Could not verify recalls:</strong> ${escapeHtml(recallError)}
-                  <div style="margin-top: 8px;">
+                  <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 12px;">
+                    We could not reach NHTSA's safety recall registry. Do not assume 0 recalls.
+                  </p>
+                  <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="loadRecallsForVehicle(state.vehicle)">Try again</button>
+                    <a href="${NHTSA_RECALLS_EXTERNAL_URL}" target="_blank" rel="noopener" class="btn btn-subtle btn-sm">Verify at nhtsa.gov/recalls ↗</a>
+                  </div>
+                </div>
+              </div>
+            ` : recallDataUnavailable ? `
+              <div class="alert alert-info" style="padding: 12px; font-size: 13px;">
+                <span class="alert-icon" aria-hidden="true">ℹ</span>
+                <div class="alert-content">
+                  <strong>Recall data unavailable from NHTSA:</strong> No model records on file for ${escapeHtml(v.year)} ${escapeHtml(v.make)}.
+                  <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 12px;">
+                    NHTSA has not indexed recall model data for this make and year. Do not assume 0 recalls.
+                  </p>
+                  <div style="margin-top: 8px;">
+                    <a href="${NHTSA_RECALLS_EXTERNAL_URL}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">
+                      Check official VIN lookup at nhtsa.gov/recalls ↗
+                    </a>
                   </div>
                 </div>
               </div>
             ` : recallModelMismatch ? `
-              <div class="alert alert-warning" style="padding: 10px 12px; font-size: 13px;">
+              <div class="alert alert-warning" style="padding: 12px; font-size: 13px;">
                 <span class="alert-icon" aria-hidden="true">⚠️</span>
-                <div class="alert-content">
-                  <strong>Model name confirmation required:</strong> NHTSA lists recalls under specific model designations.
-                  <div style="margin-top: 8px;">
-                    <button type="button" class="btn btn-primary btn-sm" onclick="navigateTo('recalls')">
-                      Select model on Recalls page →
+                <div class="alert-content" style="width: 100%;">
+                  <strong>Model name confirmation needed:</strong> NHTSA lists recalls under specific model designations. None matched <em>"${escapeHtml(v.model)}"</em> automatically.
+                  
+                  <form id="overview-model-pick-form" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+                    <label for="overview-model-select" class="form-label" style="font-size: 12px;">Select matching NHTSA recall model:</label>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <select id="overview-model-select" class="form-select" style="font-size: 13px; padding: 6px 8px; flex: 1; min-width: 160px;">
+                        ${nhtsaModels.map(m => `
+                          <option value="${escapeHtml(m)}">${escapeHtml(m)}</option>
+                        `).join("")}
+                      </select>
+                      <button type="submit" class="btn btn-primary btn-sm" style="flex-shrink: 0;">Check recalls</button>
+                    </div>
+                  </form>
+
+                  <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="overview-force-model-btn">
+                      Search for "${escapeHtml(v.model)}" directly
+                    </button>
+                    <button type="button" class="btn btn-subtle btn-sm" onclick="navigateTo('recalls')">
+                      Go to Recalls page →
                     </button>
                   </div>
                 </div>
               </div>
-            ` : recalls && recalls.length > 0 ? `
+            ` : (recalls !== null && recalls.length > 0) ? `
               <div style="display: flex; flex-direction: column; gap: 8px;">
                 <p style="margin: 0; font-size: 14px; line-height: 1.45;">
-                  <strong>${recalls.length} safety recall campaign${recalls.length === 1 ? "" : "s"}</strong> on file for the ${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(state.recallsState.selectedNhtsaModel || v.model)}.
+                  <strong>${recalls.length} safety recall campaign${recalls.length === 1 ? "" : "s"}</strong> on file for the ${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(selectedModel)}.
                 </p>
                 <ul class="numbered-list" style="margin-top: 4px;">
                   ${recalls.slice(0, 3).map(r => {
                     const t = translateRecall(r);
                     return `
                       <li class="numbered-row" style="padding: 6px 0;">
-                        <span class="number-bubble" style="width: 20px; height: 20px; min-width: 20px; font-size: 11px;">!</span>
+                        <span class="number-bubble ${t.isHighSeverity ? "serious" : ""}" style="width: 20px; height: 20px; min-width: 20px; font-size: 11px;">!</span>
                         <div style="font-size: 13px; line-height: 1.35;">
                           <strong>${escapeHtml(t.plainTitle)}</strong>
                           <span style="color: var(--text-secondary); display: block; font-size: 11px;">NHTSA #${escapeHtml(t.campaignNumber)}</span>
@@ -1339,16 +1432,19 @@ function renderOverviewPage(container) {
                 ${recalls.length > 3 ? `
                   <div style="font-size: 12px; color: var(--text-secondary);">+ ${recalls.length - 3} more recall campaigns</div>
                 ` : ""}
-                <div style="margin-top: 6px;">
+                <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap;">
                   <button type="button" class="btn btn-primary btn-sm" onclick="navigateTo('recalls')">
                     View all recall details & remedies →
                   </button>
+                  <a href="${NHTSA_RECALLS_EXTERNAL_URL}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">
+                    Verify VIN repair status ↗
+                  </a>
                 </div>
               </div>
-            ` : `
+            ` : (recalls !== null && recalls.length === 0) ? `
               <div style="display: flex; flex-direction: column; gap: 8px;">
                 <p style="margin: 0; font-size: 14px; line-height: 1.45; color: var(--status-good); font-weight: 600;">
-                  ✔ No safety recalls found on file for this model year.
+                  ✔ No safety recalls found on file for this model year (${escapeHtml(selectedModel)}).
                 </p>
                 <p style="margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.4;">
                   Recalls apply by specific VIN. Check the exact VIN on NHTSA's official website to confirm if any past campaigns applied.
@@ -1357,6 +1453,13 @@ function renderOverviewPage(container) {
                   <a href="${NHTSA_RECALLS_EXTERNAL_URL}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">
                     Verify VIN at nhtsa.gov/recalls ↗
                   </a>
+                </div>
+              </div>
+            ` : `
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <p style="margin: 0; font-size: 13px; color: var(--text-secondary);">Safety recall check not run yet.</p>
+                <div>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="loadRecallsForVehicle(state.vehicle)">Check recalls now</button>
                 </div>
               </div>
             `}
@@ -1464,6 +1567,24 @@ function renderOverviewPage(container) {
   `;
 
   container.appendChild(page);
+
+  // Setup overview model picker listeners if active
+  const overviewModelForm = page.querySelector("#overview-model-pick-form");
+  if (overviewModelForm) {
+    overviewModelForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const sel = page.querySelector("#overview-model-select");
+      if (sel && sel.value) {
+        loadRecallsForVehicle(state.vehicle, sel.value);
+      }
+    });
+  }
+  const overviewForceBtn = page.querySelector("#overview-force-model-btn");
+  if (overviewForceBtn) {
+    overviewForceBtn.addEventListener("click", () => {
+      loadRecallsForVehicle(state.vehicle, state.vehicle.model);
+    });
+  }
 }
 
 // ------------------------------------------
@@ -1482,6 +1603,7 @@ function renderRecallsPage(container) {
   const recalls = state.recallsState.recalls;
   const loading = state.recallsState.loading;
   const error = state.recallsState.error;
+  const dataUnavailable = state.recallsState.dataUnavailable;
   const modelMismatch = state.recallsState.modelSelectionNeeded;
   const nhtsaModels = state.recallsState.nhtsaRecallModels || [];
   const selectedNhtsaModel = state.recallsState.selectedNhtsaModel || v.model;
@@ -1505,17 +1627,26 @@ function renderRecallsPage(container) {
             <span class="status-pill info">Checking NHTSA…</span>
           ` : error ? `
             <span class="status-pill serious">Check failed</span>
+          ` : dataUnavailable ? `
+            <span class="status-pill info">Data unavailable</span>
           ` : modelMismatch ? `
             <span class="status-pill warning">Model choice needed</span>
-          ` : recalls && recalls.length > 0 ? `
+          ` : (recalls !== null && recalls.length > 0) ? `
             <span class="status-pill warning">⚠️ ${recalls.length} recall campaign${recalls.length === 1 ? "" : "s"}</span>
-          ` : `
+          ` : (recalls !== null && recalls.length === 0) ? `
             <span class="status-pill good">✔ 0 recalls on file</span>
+          ` : `
+            <span class="status-pill info">Not checked</span>
           `}
         </h1>
         <p class="page-subtitle">
           Live safety recall campaigns from the National Highway Traffic Safety Administration (NHTSA) for 
           <strong>${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(selectedNhtsaModel)}</strong>.
+          ${(nhtsaModels.length > 0 && selectedNhtsaModel) ? `
+            <button type="button" class="btn btn-subtle btn-sm" onclick="promptModelSelection()" style="padding: 2px 8px; font-size: 11px; margin-left: 6px;">
+              Change recall model
+            </button>
+          ` : ""}
         </p>
       </div>
       <div class="page-actions">
@@ -1593,6 +1724,30 @@ function renderRecallsPage(container) {
             </div>
           </div>
         </div>
+      ` : dataUnavailable ? `
+        <!-- Data Unavailable State -->
+        <div class="card" style="padding: 24px;">
+          <div style="display: flex; align-items: flex-start; gap: 14px;">
+            <span class="alert-icon" style="font-size: 28px;">ℹ</span>
+            <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+              <h2 class="card-title" style="font-size: 18px;">Recall model data unavailable from NHTSA</h2>
+              <p style="margin: 0; font-size: 14px; line-height: 1.5;">
+                NHTSA's public safety recall model registry has no model designations on file for <strong>${escapeHtml(v.year)} ${escapeHtml(v.make)}</strong>.
+              </p>
+              <p style="margin: 0; font-size: 13px; color: var(--text-secondary);">
+                Because no models are on file, we cannot confirm safety recalls for this vehicle. Do not assume there are 0 recalls.
+              </p>
+              <div style="display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary" onclick="loadRecallsForVehicle(state.vehicle, state.vehicle.model)">
+                  Search recalls for "${escapeHtml(v.model)}" directly
+                </button>
+                <a href="${NHTSA_RECALLS_EXTERNAL_URL}" target="_blank" rel="noopener" class="btn btn-primary">
+                  Check directly at nhtsa.gov/recalls ↗
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       ` : modelMismatch ? `
         <!-- Model Mismatch State: Let the user pick the right model -->
         <div class="card" style="border: 1px solid var(--status-warning);" role="region" aria-labelledby="model-select-heading">
@@ -1625,8 +1780,15 @@ function renderRecallsPage(container) {
               Check recalls for this model
             </button>
           </form>
+
+          <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <span style="font-size: 13px; color: var(--text-secondary);">Or if your model is not listed in NHTSA's registry:</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-force-target-model">
+              Search recalls for "${escapeHtml(v.model)}" directly
+            </button>
+          </div>
         </div>
-      ` : recalls && recalls.length === 0 ? `
+      ` : (recalls !== null && recalls.length === 0) ? `
         <!-- Verified Zero Recalls State -->
         <div class="card" style="text-align: center; padding: 36px 20px;">
           <div style="font-size: 40px; margin-bottom: 8px;">🛡️</div>
@@ -1640,7 +1802,7 @@ function renderRecallsPage(container) {
             </a>
           </div>
         </div>
-      ` : recalls && recalls.length > 0 ? `
+      ` : (recalls !== null && recalls.length > 0) ? `
         <!-- Recall Cards List -->
         <div style="display: flex; flex-direction: column; gap: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -1666,7 +1828,11 @@ function renderRecallsPage(container) {
                     </h3>
                     <span class="recall-component-tag">Component: ${escapeHtml(t.component)}</span>
                   </div>
-                  ${t.isHighSeverity ? `
+                  ${t.parkIt ? `
+                    <span class="status-pill serious">⛔ DO NOT DRIVE</span>
+                  ` : t.parkOutSide ? `
+                    <span class="status-pill serious">🔥 PARK OUTSIDE</span>
+                  ` : t.isHighSeverity ? `
                     <span class="status-pill serious">High Risk</span>
                   ` : `
                     <span class="status-pill warning">Safety Recall</span>
@@ -1688,7 +1854,7 @@ function renderRecallsPage(container) {
                 <div class="recall-section">
                   <span class="recall-section-label">
                     <span>🔧</span>
-                    <span>Remedy (What needs to be done):</span>
+                    <span>Recommended Remedy:</span>
                   </span>
                   <p class="recall-section-text">
                     ${escapeHtml(t.plainRemedy)}
@@ -1703,6 +1869,12 @@ function renderRecallsPage(container) {
                       <span class="raw-label">NHTSA Campaign Number:</span>
                       <span class="raw-value">${escapeHtml(t.campaignNumber)}</span>
                     </div>
+                    ${t.reportDate ? `
+                      <div class="raw-row">
+                        <span class="raw-label">Report Received Date:</span>
+                        <span class="raw-value">${escapeHtml(t.reportDate)}</span>
+                      </div>
+                    ` : ""}
                     <div class="raw-row">
                       <span class="raw-label">Component:</span>
                       <span class="raw-value">${escapeHtml(t.component)}</span>
@@ -1725,13 +1897,35 @@ function renderRecallsPage(container) {
                         <span class="raw-value">${escapeHtml(t.rawNotes)}</span>
                       </div>
                     ` : ""}
+                    ${t.parkIt ? `
+                      <div class="raw-row" style="color: var(--status-serious); font-weight: 600;">
+                        <span class="raw-label">Urgent Advisory:</span>
+                        <span class="raw-value">NHTSA advises owners NOT to drive this vehicle until the recall repair has been performed.</span>
+                      </div>
+                    ` : ""}
+                    ${t.parkOutSide ? `
+                      <div class="raw-row" style="color: var(--status-serious); font-weight: 600;">
+                        <span class="raw-label">Fire Advisory:</span>
+                        <span class="raw-value">NHTSA advises parking this vehicle outside and away from structures until repaired.</span>
+                      </div>
+                    ` : ""}
                   </div>
                 </details>
               </article>
             `;
           }).join("")}
         </div>
-      ` : ""}
+      ` : `
+        <div class="card" style="text-align: center; padding: 36px 20px;">
+          <h2 class="card-title" style="font-size: 18px;">Safety recall check not run yet</h2>
+          <p style="margin: 8px auto 16px; font-size: 14px; color: var(--text-secondary); max-width: 420px;">
+            Check live safety recall records from NHTSA for this vehicle.
+          </p>
+          <button type="button" class="btn btn-primary" onclick="loadRecallsForVehicle(state.vehicle)">
+            Check recalls now
+          </button>
+        </div>
+      `}
     </div>
   `;
 
@@ -1746,6 +1940,13 @@ function renderRecallsPage(container) {
       if (select && select.value) {
         loadRecallsForVehicle(state.vehicle, select.value);
       }
+    });
+  }
+
+  const forceBtn = page.querySelector("#btn-force-target-model");
+  if (forceBtn) {
+    forceBtn.addEventListener("click", () => {
+      loadRecallsForVehicle(state.vehicle, state.vehicle.model);
     });
   }
 }
@@ -2168,15 +2369,22 @@ function printReport() {
     </div>
 
     <div class="print-section">
-      <h2>Safety Recalls (${recalls.length} on file from NHTSA)</h2>
+      <h2>Safety Recalls</h2>
       <p class="muted">
         NHTSA recall data is by vehicle model line. Always verify open recall status for this specific VIN at: https://www.nhtsa.gov/recalls
       </p>
-      ${recalls.length === 0 ? `
-        <p>✔ No safety recall campaigns on file for this model year.</p>
-      ` : `
+      ${state.recallsState.error ? `
+        <p>⚠️ Unable to verify safety recalls from NHTSA (${escapeHtml(state.recallsState.error)}). Do not assume 0 recalls. Check directly at https://www.nhtsa.gov/recalls.</p>
+      ` : state.recallsState.dataUnavailable ? `
+        <p>ℹ Safety recall records unavailable from NHTSA for this make and year. Do not assume 0 recalls. Check directly at https://www.nhtsa.gov/recalls.</p>
+      ` : state.recallsState.modelSelectionNeeded ? `
+        <p>⚠️ Model name confirmation required for NHTSA recall registry. Check directly at https://www.nhtsa.gov/recalls.</p>
+      ` : (state.recallsState.recalls && state.recallsState.recalls.length === 0) ? `
+        <p>✔ No safety recall campaigns on file from NHTSA for this model year (${escapeHtml(state.recallsState.selectedNhtsaModel || (v ? v.model : ""))}).</p>
+      ` : (state.recallsState.recalls && state.recallsState.recalls.length > 0) ? `
+        <p><strong>${state.recallsState.recalls.length} safety recall campaign(s) on file from NHTSA:</strong></p>
         <ul>
-          ${recalls.map(r => {
+          ${state.recallsState.recalls.map(r => {
             const t = translateRecall(r);
             return `
               <li style="margin-bottom: 8pt;">
@@ -2187,6 +2395,8 @@ function printReport() {
             `;
           }).join("")}
         </ul>
+      ` : `
+        <p>Safety recall lookup has not been performed yet. Check open recalls at https://www.nhtsa.gov/recalls.</p>
       `}
     </div>
 

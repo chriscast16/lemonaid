@@ -1057,6 +1057,11 @@ html, body {
   margin-top: 1px;
 }
 
+.number-bubble.serious {
+  background-color: var(--status-serious-bg);
+  color: var(--status-serious);
+}
+
 /* Modals & Dialogs */
 [hidden],
 .modal-backdrop[hidden] {
