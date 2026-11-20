@@ -31,44 +31,153 @@ const CHECKLIST_ITEMS = [
   { id: 9, group: "Professional opinion", text: "Schedule an independent pre-purchase inspection with a trusted certified mechanic." }
 ];
 
-// Things to inspect guide
-const INSPECT_AREAS = [
-  {
-    id: 0,
-    title: "Engine and warning lights",
+// Comprehensive plain-English guide for owner-reported complaints by component
+const COMPLAINT_COMPONENT_GUIDE = {
+  "Engine and Engine Cooling": {
+    title: "Engine & Cooling System",
     icon: "⚙️",
-    description: "Look for warning lights on the dashboard, listen for knocking or ticking noises, and check for hesitation or rough idling.",
-    whatToLookFor: "When turning the ignition, check that all dashboard warning lights illuminate briefly and turn off once the engine starts. A blinking check engine light indicates an active misfire."
+    summary: "Engine stalling, loss of motive power, overheating, head gasket failures, or oil leaks.",
+    whatToLookFor: "Check for warning lights on the dashboard. Listen for ticking, knocking, or rattling noises when starting cold and idling. Check under the hood for coolant leaks, sweet smells, or low fluid. On the test drive, watch for hesitation during acceleration, rough idling at red lights, or temperature gauge creeping up."
   },
-  {
-    id: 1,
-    title: "Transmission and drivetrain",
+  "Powertrain and Transmission": {
+    title: "Powertrain & Transmission",
     icon: "🕹️",
-    description: "During your test drive, notice hard shifts, unusual vibration, or delays when accelerating from a stop.",
-    whatToLookFor: "Shifting into Drive or Reverse should take less than a second without a thud. While driving, gear shifts should feel prompt and smooth."
+    summary: "Transmission gear slipping, hard shifting, shuddering, clunking, or sudden loss of drive power.",
+    whatToLookFor: "While stopped, shift smoothly between Park, Reverse, and Drive—there should be no harsh clunk, jolt, or 2-second delay. During acceleration, ensure gears shift smoothly without surging (RPMs flaring up without speed), jerking, or hesitation from a stop."
   },
-  {
-    id: 2,
-    title: "Brakes and steering",
-    icon: "🛑",
-    description: "Test braking responsiveness, listen for squealing or grinding, and check that the car stays straight when you brake.",
-    whatToLookFor: "A soft or spongy brake pedal can indicate air in brake lines or worn master cylinders. Vibrations through the pedal usually mean warped brake rotors."
+  "Driver Assist & Collision Avoidance": {
+    title: "Driver Assist & Collision Avoidance",
+    icon: "🛡️",
+    summary: "Automatic emergency braking false triggers, cruise control failures, or camera/radar sensor faults.",
+    whatToLookFor: "Look at the windshield camera area and front bumper radar for cracks or misalignment. During your test drive, test adaptive cruise control and lane centering. Watch for unexpected warning beeps, flashing brake warnings when no car is ahead, or sudden unprompted braking."
   },
-  {
-    id: 3,
-    title: "Electrical accessories and climate",
+  "Electrical System & Accessories": {
+    title: "Electrical System & Accessories",
     icon: "⚡",
-    description: "Test the air conditioner, heater, infotainment screen, power windows, mirrors, door locks, and backup camera.",
-    whatToLookFor: "Make sure cold A/C blows within 60 seconds. Test every window switch from the driver door and individually."
+    summary: "Parasitic battery drain, alternator or starter failure, touchscreen freezes, or wiring shorts.",
+    whatToLookFor: "Test all power windows, locks, infotainment display, backup camera, and climate control (verify cold air blows within 60 seconds). Ensure the engine cranks immediately on first turn without slow cranking or dashboard flickering."
   },
-  {
-    id: 4,
-    title: "Tires, body, and suspension",
+  "Service Brakes & Hydraulic System": {
+    title: "Service Brakes & Hydraulic System",
+    icon: "🛑",
+    summary: "Brake booster failure, stiff or spongy pedals, ABS modulator faults, or reduced stopping ability.",
+    whatToLookFor: "Before driving, press the brake pedal firmly—it should feel solid and not sink slowly to the floor. While test driving, perform gentle and firm stops: listen for grinding or high-pitched squealing, and verify the car stops straight without pulling to either side."
+  },
+  "Fuel and Propulsion System": {
+    title: "Fuel & Propulsion System",
+    icon: "⛽",
+    summary: "High-pressure fuel pump failure, fuel injector leaks, raw gas odors, or sudden limp mode.",
+    whatToLookFor: "Sniff around the vehicle and under the hood for any raw gasoline smells. While driving at 45–60 mph, test accelerating to ensure no sudden power drop (limp mode) or hesitation. Look under the rear for any fuel leaks or stains."
+  },
+  "Steering System": {
+    title: "Steering System",
     icon: "🛞",
-    description: "Inspect tire tread depth and alignment wear. Look for uneven body panel gaps or mismatched paint that may indicate past collision repairs.",
-    whatToLookFor: "Tires worn heavily on the inner or outer edge signal alignment or suspension problems. Sight down the sides in good sunlight to spot body filler waves."
+    summary: "Electric power steering assist failure, steering stiffness, binding, or wandering.",
+    whatToLookFor: "Turn the steering wheel all the way left and right while parked—listen for groaning, whining, or clicking. On a straight flat road, verify the wheel stays centered and the vehicle doesn't pull or wander."
+  },
+  "Suspension": {
+    title: "Suspension & Ride Control",
+    icon: "🔩",
+    summary: "Broken springs, worn control arms, leaking struts, or ball joint looseness.",
+    whatToLookFor: "Drive over speed bumps or uneven pavement, listening for thumping, rattling, or creaking. Look at the car parked on level ground to ensure it sits evenly without sagging at any corner. Look behind tires for leaking shock oil."
+  },
+  "Air Bags & Restraints": {
+    title: "Air Bags & Restraints",
+    icon: "🦺",
+    summary: "SRS airbag warning lights, crash sensor faults, or airbag inflator safety concerns.",
+    whatToLookFor: "Turn the ignition on: the airbag/SRS light should light up for about 5 seconds, then turn completely off. If the light stays on, blinks, or never illuminates at startup, have a certified mechanic read the SRS fault codes."
+  },
+  "Back Over Prevention & Cameras": {
+    title: "Back Over Prevention & Cameras",
+    icon: "📷",
+    summary: "Black screen, flickering, or delayed rearview backup camera display.",
+    whatToLookFor: "Shift into Reverse and verify the rear camera display comes on immediately with a clear, sharp picture. Test in bright light and shade. If equipped with rear parking sensors, listen for steady beeping as you back up near an obstacle."
+  },
+  "Vehicle Structure & Frame": {
+    title: "Structure, Frame & Body Panels",
+    icon: "🏗️",
+    summary: "Panel misalignment, frame corrosion, door latch weld failures, or water leaks into cabin.",
+    whatToLookFor: "Examine gaps between body panels (doors, hood, trunk) for even width. Open and close all doors and the trunk lid—they should close cleanly without slamming. Inspect underneath the car and inside wheel wells for heavy rust or repaint overspray."
+  },
+  "Visibility & Windshield Wipers": {
+    title: "Visibility & Windshield Wipers",
+    icon: "🌧️",
+    summary: "Wiper motor failure, windshield defroster grid defects, or washer fluid failure.",
+    whatToLookFor: "Test all wiper speeds (intermittent, low, high) and spray washer fluid. Check that both front and rear defrosters heat up and clear fogged windows. Check windshield glass for any cracks or stone chips in the driver line of sight."
+  },
+  "Tires": {
+    title: "Tires",
+    icon: "🛞",
+    summary: "Premature tread wear, tire pressure monitoring sensor (TPMS) failures, or sidewall bubbles.",
+    whatToLookFor: "Check tread depth across all 4 tires with a penny or gauge. Look for heavy wear on only the inner or outer edge, which indicates alignment or suspension trouble. Check sidewalls for cracks or bulges."
+  },
+  "Wheels": {
+    title: "Wheels & Rims",
+    icon: "🔘",
+    summary: "Cracked alloy rims, bent wheel lips from potholes, or loose lug nut seats.",
+    whatToLookFor: "Look at rim edges for deep gouges or bent lips from potholes. While driving at 50–65 mph, notice if there is a hum or roar that changes when gently swerving, which indicates a worn wheel bearing."
+  },
+  "Exterior & Interior Lighting": {
+    title: "Lighting (Headlights & Signals)",
+    icon: "💡",
+    summary: "Headlight module failure, burned-out LED daytime running lights, or tail light water intrusion.",
+    whatToLookFor: "Walk around the car while someone toggles low beams, high beams, turn signals, hazard lights, brake lights, and reverse lights. Check lenses for moisture or cloudiness."
+  },
+  "Seat Belts": {
+    title: "Seat Belts",
+    icon: "🔒",
+    summary: "Seat belt retractor jamming, failure to latch, or pretensioner electrical faults.",
+    whatToLookFor: "Pull every seat belt out completely and yank quickly to ensure the locking retractor catches firmly. Click each tongue into its buckle and press the release button to verify it unlatches smoothly."
+  },
+  "Seats & Latches": {
+    title: "Seats & Interior Latches",
+    icon: "💺",
+    summary: "Power seat track motor failure, loose seat frames, or fold-down seatback latches.",
+    whatToLookFor: "Test all seat adjusters (power or manual), seat heaters, and folding seatback latches. Sit firmly in each seat and rock gently to ensure there is no loose seat frame play."
+  },
+  "Door Latches and Locks": {
+    title: "Door Latches & Locks",
+    icon: "🔑",
+    summary: "Power door lock actuators failing, doors unlatching, or tailgate latch failure.",
+    whatToLookFor: "Lock and unlock all doors using the key fob and interior switches. Open every door from inside and outside. Test child safety locks on rear doors. Check hood and fuel door release levers."
+  },
+  "Electronic Stability & Traction Control": {
+    title: "Electronic Stability & Traction Control",
+    icon: "⚠️",
+    summary: "False traction control activation, wheel speed sensor faults, or steering angle sensor errors.",
+    whatToLookFor: "Ensure the traction control / ESC warning light turns on briefly with the ignition and goes off. Press the traction control button to verify the system responds. A constant ESC light means an active sensor fault."
+  },
+  "Other Miscellaneous Components": {
+    title: "Other Miscellaneous Equipment",
+    icon: "🔍",
+    summary: "Owner concerns reported across other vehicle systems and cabin components.",
+    whatToLookFor: "Perform a thorough walk-around and test drive. Take notes on any odd sounds, smells, or warning lights. Have an independent certified mechanic perform a full diagnostic scan to read all vehicle modules for hidden trouble codes."
   }
-];
+};
+
+function getComplaintCategory(rawComp) {
+  const c = (rawComp || "").toUpperCase().trim();
+  if (c.includes("ENGINE") || c === "GASOLINE" || c === "DIESEL") return "Engine and Engine Cooling";
+  if (c.includes("POWER TRAIN") || c.includes("TRANSMISSION")) return "Powertrain and Transmission";
+  if (c.includes("BRAKE") || c === "HYDRAULIC") return "Service Brakes & Hydraulic System";
+  if (c.includes("ELECTRICAL")) return "Electrical System & Accessories";
+  if (c.includes("FUEL")) return "Fuel and Propulsion System";
+  if (c.includes("FORWARD COLLISION") || c.includes("COLLISION AVOIDANCE") || c.includes("LANE DEPARTURE") || c.includes("SPEED CONTROL")) return "Driver Assist & Collision Avoidance";
+  if (c.includes("STEERING")) return "Steering System";
+  if (c.includes("AIR BAG")) return "Air Bags & Restraints";
+  if (c.includes("SUSPENSION")) return "Suspension";
+  if (c.includes("BACK OVER") || c.includes("CAMERA")) return "Back Over Prevention & Cameras";
+  if (c.includes("STRUCTURE")) return "Vehicle Structure & Frame";
+  if (c.includes("TIRE")) return "Tires";
+  if (c.includes("WHEEL")) return "Wheels";
+  if (c.includes("LIGHTING")) return "Exterior & Interior Lighting";
+  if (c.includes("VISIBILITY") || c.includes("WIPER")) return "Visibility & Windshield Wipers";
+  if (c.includes("SEAT BELT")) return "Seat Belts";
+  if (c.includes("SEAT")) return "Seats & Latches";
+  if (c.includes("LATCH") || c.includes("LOCK")) return "Door Latches and Locks";
+  if (c.includes("STABILITY") || c.includes("TRACTION")) return "Electronic Stability & Traction Control";
+  return "Other Miscellaneous Components";
+}
 
 // Questions for the seller
 const SELLER_QUESTIONS = [
@@ -146,6 +255,16 @@ const state = {
     selectedNhtsaModel: null,
     recalls: null,
     fetchTimestamp: null
+  },
+
+  // Complaints live state
+  complaintsState: {
+    loading: false,
+    error: null,
+    totalComplaints: 0,
+    topProblemAreas: [],
+    selectedModel: null,
+    fetchTimestamp: null
   }
 };
 
@@ -219,6 +338,27 @@ function saveNotes() {
   } catch (e) {
     console.error("Failed to save notes", e);
   }
+}
+
+// Key notes per vehicle by year, make, model, and area
+function getVehicleNoteKey(vehicle, areaKey) {
+  if (!vehicle) return String(areaKey || "general");
+  const y = (vehicle.year || "").trim().toLowerCase();
+  const m = (vehicle.make || "").trim().toLowerCase();
+  const md = (vehicle.model || "").trim().toLowerCase();
+  const a = (areaKey || "").trim().toLowerCase();
+  return `${y}_${m}_${md}_${a}`;
+}
+
+function getNoteForArea(vehicle, areaKey) {
+  const key = getVehicleNoteKey(vehicle, areaKey);
+  return state.notes[key] || "";
+}
+
+function setNoteForArea(vehicle, areaKey, value) {
+  const key = getVehicleNoteKey(vehicle, areaKey);
+  state.notes[key] = value;
+  saveNotes();
 }
 
 function setTheme(theme, save = true) {
@@ -458,6 +598,7 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
       if (prefixMatch) {
         matchedRecallModel = prefixMatch;
         state.recallsState.selectedNhtsaModel = matchedRecallModel;
+        loadComplaintsForVehicle(vehicle, matchedRecallModel);
       } else {
         // Model did NOT match NHTSA recall model list:
         // Never show "0 recalls". Prompt the user to pick the right model!
@@ -469,7 +610,9 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
         return;
       }
     } else {
+      matchedRecallModel = manualModelChoice;
       state.recallsState.selectedNhtsaModel = matchedRecallModel;
+      loadComplaintsForVehicle(vehicle, matchedRecallModel);
     }
 
     // Step 2: Fetch recalls for the matched/selected model
@@ -516,6 +659,165 @@ async function promptModelSelection() {
   }
   renderActiveView();
 }
+
+// ==========================================
+// 6. Owner Complaints & Problem Areas Engine
+// ==========================================
+
+let currentComplaintsRequestId = 0;
+
+async function loadComplaintsForVehicle(vehicle, manualModelChoice = null) {
+  if (!vehicle || !vehicle.year || !vehicle.make) return;
+
+  // Rule 1: Never load complaints without a confirmed model name
+  const queryModel = (manualModelChoice || state.recallsState.selectedNhtsaModel || "").trim();
+  if (!queryModel) return;
+
+  const year = (vehicle.year || "").trim();
+  const make = (vehicle.make || "").trim();
+
+  // Rule 2: Increment request ID and capture vehicle to ignore outdated responses
+  const requestId = ++currentComplaintsRequestId;
+  const targetVehicle = vehicle;
+
+  state.complaintsState = {
+    loading: true,
+    error: null,
+    totalComplaints: 0,
+    topProblemAreas: [],
+    selectedModel: queryModel,
+    fetchTimestamp: null
+  };
+  renderActiveView();
+
+  try {
+    const url = `https://api.nhtsa.gov/complaints/complaintsByVehicle?make=${encodeURIComponent(make)}&model=${encodeURIComponent(queryModel)}&modelYear=${encodeURIComponent(year)}`;
+    const data = await fetchWithTimeout(url);
+
+    // Drop outdated responses or if active vehicle changed
+    if (requestId !== currentComplaintsRequestId || state.vehicle !== targetVehicle) {
+      return;
+    }
+
+    const rawList = (data && (data.results || data.Results)) || [];
+    const totalCount = (data && typeof data.count === "number") ? data.count : rawList.length;
+
+    // Group complaints by normalized component
+    const groups = {};
+
+    rawList.forEach(c => {
+      const rawComps = (c.components || "UNKNOWN OR OTHER").split(",").map(s => s.trim()).filter(Boolean);
+      const compsInThisComplaint = new Set();
+
+      rawComps.forEach(rc => {
+        compsInThisComplaint.add(getComplaintCategory(rc));
+      });
+
+      // If specific components exist alongside 'Other Miscellaneous Components', remove 'Other'
+      if (compsInThisComplaint.size > 1 && compsInThisComplaint.has("Other Miscellaneous Components")) {
+        compsInThisComplaint.delete("Other Miscellaneous Components");
+      }
+
+      compsInThisComplaint.forEach(catName => {
+        if (!groups[catName]) {
+          const guide = COMPLAINT_COMPONENT_GUIDE[catName] || {
+            title: catName,
+            icon: "🔍",
+            summary: "Owner reported issues for this component.",
+            whatToLookFor: `Check the ${catName.toLowerCase()} carefully during your test drive. Notice warning lights, strange noises, or erratic behavior.`
+          };
+          groups[catName] = {
+            category: catName,
+            key: catName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+            title: guide.title,
+            icon: guide.icon,
+            summary: guide.summary,
+            whatToLookFor: guide.whatToLookFor,
+            count: 0,
+            crashes: 0,
+            fires: 0,
+            injuries: 0
+          };
+        }
+        groups[catName].count++;
+        if (c.crash === true || c.crash === "true" || c.crash === 1) groups[catName].crashes++;
+        if (c.fire === true || c.fire === "true" || c.fire === 1) groups[catName].fires++;
+        const numInj = Number(c.numberOfInjuries);
+        if (numInj > 0) groups[catName].injuries += numInj;
+      });
+    });
+
+    const sorted = Object.values(groups).sort((a, b) => b.count - a.count);
+    const top5 = sorted.slice(0, 5);
+
+    if (requestId !== currentComplaintsRequestId || state.vehicle !== targetVehicle) {
+      return;
+    }
+
+    state.complaintsState.loading = false;
+    state.complaintsState.error = null;
+    state.complaintsState.totalComplaints = totalCount;
+    state.complaintsState.topProblemAreas = top5;
+    state.complaintsState.fetchTimestamp = new Date().toLocaleString([], {
+      month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit"
+    });
+  } catch (err) {
+    if (requestId !== currentComplaintsRequestId || state.vehicle !== targetVehicle) {
+      return;
+    }
+
+    state.complaintsState.loading = false;
+    state.complaintsState.topProblemAreas = [];
+    state.complaintsState.totalComplaints = 0;
+    state.complaintsState.error = err.message || "Failed to load owner complaints from NHTSA. Please try again.";
+  }
+
+  renderActiveView();
+}
+
+function retryComplaints() {
+  if (state.vehicle && state.recallsState.selectedNhtsaModel) {
+    loadComplaintsForVehicle(state.vehicle, state.recallsState.selectedNhtsaModel);
+  }
+}
+
+function renderSafetyFlagsHtml(area) {
+  const flags = [];
+  if (area.crashes > 0) {
+    flags.push(`
+      <span class="status-pill serious" title="${area.crashes} reported crash(es)">
+        <span aria-hidden="true">💥</span>
+        <span>${area.crashes} crash${area.crashes === 1 ? "" : "es"} reported</span>
+      </span>
+    `);
+  }
+  if (area.fires > 0) {
+    flags.push(`
+      <span class="status-pill serious" title="${area.fires} reported fire(s)">
+        <span aria-hidden="true">🔥</span>
+        <span>${area.fires} fire${area.fires === 1 ? "" : "s"} reported</span>
+      </span>
+    `);
+  }
+  if (area.injuries > 0) {
+    flags.push(`
+      <span class="status-pill warning" title="${area.injuries} reported injury/injuries">
+        <span aria-hidden="true">🩹</span>
+        <span>${area.injuries} injur${area.injuries === 1 ? "y" : "ies"} reported</span>
+      </span>
+    `);
+  }
+  if (flags.length === 0) {
+    flags.push(`
+      <span class="status-pill good" title="No crashes, fires, or injuries reported in these complaints">
+        <span aria-hidden="true">✔</span>
+        <span>No crashes, fires, or injuries reported</span>
+      </span>
+    `);
+  }
+  return flags.join("");
+}
+
 
 function normalizeModelString(str) {
   return (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -808,8 +1110,9 @@ function selectVehicle(vehicle) {
   if (state.recentVehicles.length > 5) state.recentVehicles.pop();
   saveRecentVehicles();
 
-  // Trigger recall check
+  // Trigger recall & complaints check
   loadRecallsForVehicle(vehicle);
+  loadComplaintsForVehicle(vehicle);
 
   // Navigate to overview
   navigateTo("overview");
@@ -989,8 +1292,8 @@ function renderHomePage(container) {
 
         <div class="card">
           <div class="icon-tile">🔧</div>
-          <h3 class="card-title" style="font-size: 16px;">Things to Inspect</h3>
-          <p class="card-description">Key mechanical symptoms to watch for on engine, transmission, brakes, and electrical systems with session notes.</p>
+          <h3 class="card-title" style="font-size: 16px;">Things to check</h3>
+          <p class="card-description">Real owner complaints from NHTSA grouped by component to show top problem areas, safety flags, and test drive symptoms.</p>
           <button type="button" class="btn btn-subtle btn-sm" style="align-self: flex-start; padding-left: 0;" onclick="navigateTo('inspect')">
             View inspection points →
           </button>
@@ -1236,11 +1539,11 @@ function renderOverviewPage(container) {
     <div class="alert alert-info" role="region" aria-label="Data source notice">
       <span class="alert-icon" aria-hidden="true">🏛️</span>
       <div class="alert-content">
-        <div class="alert-title">Data: NHTSA public datasets (vPIC, Recalls)</div>
+        <div class="alert-title">Data: NHTSA public datasets (vPIC, Recalls, Complaints)</div>
         <div>
-          ${state.recallsState.fetchTimestamp ? `Fetched live from NHTSA: <strong>${escapeHtml(state.recallsState.fetchTimestamp)}</strong>. ` : "Connected to NHTSA live endpoints. "}
-          Always verify individual vehicle repair status with the official VIN lookup at 
-          <a href="${NHTSA_RECALLS_EXTERNAL_URL}" target="_blank" rel="noopener" style="color: var(--brand-text); font-weight: 600;">nhtsa.gov/recalls</a>.
+          ${(state.recallsState.fetchTimestamp || state.complaintsState.fetchTimestamp) ? `Fetched live from NHTSA: <strong>${escapeHtml(state.complaintsState.fetchTimestamp || state.recallsState.fetchTimestamp)}</strong>. ` : "Connected to live NHTSA public datasets. "}
+          Always verify individual VIN recall completion at 
+          <a href="${NHTSA_RECALLS_EXTERNAL_URL}" target="_blank" rel="noopener" style="color: var(--brand-text); font-weight: 600;">nhtsa.gov/recalls</a>, and arrange an independent pre-purchase inspection with a trusted certified mechanic.
         </div>
       </div>
     </div>
@@ -1540,28 +1843,72 @@ function renderOverviewPage(container) {
             <span class="icon-tile sm">🔎</span>
             <div>
               <h2 id="inspect-preview-heading" class="card-title">Things to check</h2>
-              <p class="card-description">Mechanical symptoms to watch and listen for</p>
+              <p class="card-description">Top owner complaints & test drive symptoms</p>
             </div>
           </div>
         </div>
 
-        <ul class="numbered-list">
-          ${INSPECT_AREAS.slice(0, 3).map(area => `
-            <li class="numbered-row">
-              <span class="number-bubble">${area.icon}</span>
-              <div style="font-size: 13px; line-height: 1.4;">
-                <strong>${escapeHtml(area.title)}</strong>
-                <p style="margin: 2px 0 0; color: var(--text-secondary); font-size: 12px;">${escapeHtml(area.description)}</p>
-              </div>
-            </li>
-          `).join("")}
-        </ul>
+        ${state.complaintsState.loading ? `
+          <div style="padding: 16px 0; text-align: center;">
+            <div style="font-size: 20px; margin-bottom: 6px;">⏳</div>
+            <p style="margin: 0; font-size: 13px; color: var(--text-secondary);">Loading owner complaints from NHTSA…</p>
+          </div>
+        ` : state.complaintsState.error ? `
+          <div class="alert alert-serious" style="padding: 10px; margin-bottom: 12px;">
+            <span class="alert-icon" style="font-size: 16px;">⚠️</span>
+            <div class="alert-content" style="font-size: 12px;">
+              <div>Unable to load owner complaints. Do not assume 0 complaints.</div>
+              <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 6px;" onclick="retryComplaints()">Try again</button>
+            </div>
+          </div>
+        ` : state.recallsState.modelSelectionNeeded ? `
+          <div class="alert alert-warning" style="padding: 10px; margin-bottom: 12px;">
+            <span class="alert-icon" style="font-size: 16px;">ℹ️</span>
+            <div class="alert-content" style="font-size: 12px;">
+              <div>Confirm the exact NHTSA model name above to load owner complaints.</div>
+            </div>
+          </div>
+        ` : (state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0) ? `
+          <div style="padding: 8px 0;">
+            <p style="margin: 0 0 10px; font-size: 13px; color: var(--text-secondary);">
+              ✔ No owner complaints on file with NHTSA for this model year.
+            </p>
+            <button type="button" class="btn btn-subtle btn-sm" style="padding-left: 0;" onclick="navigateTo('inspect')">
+              Open inspection notes →
+            </button>
+          </div>
+        ` : `
+          <ul class="numbered-list">
+            ${state.complaintsState.topProblemAreas.slice(0, 3).map(area => `
+              <li class="numbered-row">
+                <span class="number-bubble">${area.icon}</span>
+                <div style="font-size: 13px; line-height: 1.4; flex: 1;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;">
+                    <strong>${escapeHtml(area.title)}</strong>
+                    <span class="recall-campaign-badge" style="font-size: 11px; padding: 1px 6px;">
+                      ${area.count.toLocaleString()} complaint${area.count === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">
+                    ${area.crashes > 0 ? `<span class="status-pill serious" style="font-size: 10px; padding: 1px 6px;">💥 ${area.crashes} crash${area.crashes > 1 ? "es" : ""}</span>` : ""}
+                    ${area.fires > 0 ? `<span class="status-pill serious" style="font-size: 10px; padding: 1px 6px;">🔥 ${area.fires} fire${area.fires > 1 ? "s" : ""}</span>` : ""}
+                    ${area.injuries > 0 ? `<span class="status-pill warning" style="font-size: 10px; padding: 1px 6px;">🩹 ${area.injuries} injur${area.injuries > 1 ? "ies" : "y"}</span>` : ""}
+                    ${(area.crashes === 0 && area.fires === 0 && area.injuries === 0) ? `<span class="status-pill good" style="font-size: 10px; padding: 1px 6px;">✔ No crashes/injuries</span>` : ""}
+                  </div>
+                  <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.35;">
+                    ${escapeHtml(area.summary)}
+                  </p>
+                </div>
+              </li>
+            `).join("")}
+          </ul>
 
-        <div>
-          <button type="button" class="btn btn-subtle btn-sm" style="padding-left: 0;" onclick="navigateTo('inspect')">
-            Open full inspection points & notes →
-          </button>
-        </div>
+          <div style="margin-top: 8px;">
+            <button type="button" class="btn btn-subtle btn-sm" style="padding-left: 0;" onclick="navigateTo('inspect')">
+              Open all top ${state.complaintsState.topProblemAreas.length} problem areas & notes →
+            </button>
+          </div>
+        `}
       </section>
     </div>
   `;
@@ -1576,6 +1923,7 @@ function renderOverviewPage(container) {
       const sel = page.querySelector("#overview-model-select");
       if (sel && sel.value) {
         loadRecallsForVehicle(state.vehicle, sel.value);
+        loadComplaintsForVehicle(state.vehicle, sel.value);
       }
     });
   }
@@ -1583,6 +1931,7 @@ function renderOverviewPage(container) {
   if (overviewForceBtn) {
     overviewForceBtn.addEventListener("click", () => {
       loadRecallsForVehicle(state.vehicle, state.vehicle.model);
+      loadComplaintsForVehicle(state.vehicle, state.vehicle.model);
     });
   }
 }
@@ -1939,6 +2288,7 @@ function renderRecallsPage(container) {
       const select = page.querySelector("#nhtsa-model-select");
       if (select && select.value) {
         loadRecallsForVehicle(state.vehicle, select.value);
+        loadComplaintsForVehicle(state.vehicle, select.value);
       }
     });
   }
@@ -1947,6 +2297,7 @@ function renderRecallsPage(container) {
   if (forceBtn) {
     forceBtn.addEventListener("click", () => {
       loadRecallsForVehicle(state.vehicle, state.vehicle.model);
+      loadComplaintsForVehicle(state.vehicle, state.vehicle.model);
     });
   }
 }
@@ -1976,6 +2327,11 @@ function renderInspectPage(container) {
     return;
   }
 
+  // Trigger complaints load if not already started
+  if (!state.complaintsState.loading && !state.complaintsState.error && state.complaintsState.fetchTimestamp === null) {
+    loadComplaintsForVehicle(v);
+  }
+
   const page = document.createElement("div");
   page.className = "page-container";
 
@@ -1993,46 +2349,141 @@ function renderInspectPage(container) {
     <header class="page-header">
       <div class="page-title-group">
         <h1>Things to check</h1>
-        <p class="page-subtitle">Mechanical symptoms, inspection points, and signs of trouble to discuss with an independent mechanic.</p>
+        <p class="page-subtitle">Top 5 owner-reported problem areas from NHTSA, what to look and listen for, and session notes for your inspection.</p>
       </div>
       <div class="page-actions">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="printReport()">Print notes</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="printReport()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+          Print notes
+        </button>
       </div>
     </header>
 
-    <div class="alert alert-info">
-      <span class="alert-icon" aria-hidden="true">💡</span>
+    <!-- NHTSA Complaints Source & Independent Inspection Banner -->
+    <div class="alert alert-info" role="region" aria-label="Complaints data source notice">
+      <span class="alert-icon" aria-hidden="true">🏛️</span>
       <div class="alert-content">
-        <strong>Session Notes:</strong> Any notes you type below are automatically saved for this vehicle and included when you print your report.
+        <div class="alert-title">Data: NHTSA public datasets (Complaints)</div>
+        <div>
+          ${state.complaintsState.fetchTimestamp ? `Fetched live from NHTSA: <strong>${escapeHtml(state.complaintsState.fetchTimestamp)}</strong>. ` : "Connected to live NHTSA complaints database. "}
+          Owner complaints reflect real driver reports for the ${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(state.recallsState.selectedNhtsaModel || v.model)}.
+          <strong>Always schedule an independent pre-purchase inspection with a trusted certified mechanic before buying.</strong>
+        </div>
       </div>
     </div>
 
-    <!-- Inspection Areas List -->
-    <div style="display: flex; flex-direction: column; gap: 16px;">
-      ${INSPECT_AREAS.map(area => `
-        <article class="card" aria-labelledby="inspect-heading-${area.id}">
+    <div class="alert alert-good" style="margin-top: 12px;">
+      <span class="alert-icon" aria-hidden="true">📝</span>
+      <div class="alert-content">
+        <strong>Session Notes:</strong> Any notes you type in the problem areas below are automatically saved in your browser and included when you print your report.
+      </div>
+    </div>
+
+    <!-- Content Area: Loading, Error, or Real Problem Areas -->
+    <div style="margin-top: 16px;">
+      ${state.complaintsState.loading ? `
+        <div class="card" style="text-align: center; padding: 40px 16px;">
+          <div style="font-size: 32px; margin-bottom: 8px;">⏳</div>
+          <h2 class="card-title" style="font-size: 18px; margin-bottom: 4px;">Loading owner complaints from NHTSA…</h2>
+          <p class="card-description">Fetching public complaint records for the ${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(state.recallsState.selectedNhtsaModel || v.model)}.</p>
+        </div>
+      ` : state.complaintsState.error ? `
+        <div class="alert alert-serious" role="alert">
+          <span class="alert-icon" aria-hidden="true">⚠️</span>
+          <div class="alert-content">
+            <div class="alert-title">Unable to check owner complaints from NHTSA</div>
+            <div style="margin-bottom: 8px;">${escapeHtml(state.complaintsState.error)} Do not assume there are 0 complaints.</div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="retryComplaints()">
+              Try again
+            </button>
+          </div>
+        </div>
+      ` : state.recallsState.modelSelectionNeeded ? `
+        <div class="card" style="border: 1px solid var(--status-warning);">
           <div class="card-header">
             <div class="card-title-group">
-              <span class="icon-tile">${area.icon}</span>
+              <span class="icon-tile sm">ℹ️</span>
               <div>
-                <h2 id="inspect-heading-${area.id}" class="card-title" style="font-size: 18px;">${escapeHtml(area.title)}</h2>
-                <p class="card-description">${escapeHtml(area.description)}</p>
+                <h2 class="card-title" style="color: var(--status-warning);">Confirm vehicle model name</h2>
+                <p class="card-description">Please confirm the exact model designation on the Report Overview or Safety Recalls page to load complaints.</p>
               </div>
             </div>
           </div>
-
-          <div style="background-color: var(--card-subtle-bg); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; line-height: 1.45;">
-            <strong>What to look and listen for:</strong> ${escapeHtml(area.whatToLookFor)}
+          <div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="navigateTo('overview')">
+              Return to Report overview
+            </button>
           </div>
-
-          <div class="form-group" style="margin-top: 4px;">
-            <label for="inspect-note-${area.id}" class="form-label">
-              Your inspection notes:
+        </div>
+      ` : (state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0) ? `
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="icon-tile sm">✔</span>
+              <div>
+                <h2 class="card-title" style="font-size: 18px;">No owner complaints on file with NHTSA</h2>
+                <p class="card-description">NHTSA has received 0 safety complaints for the ${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(state.recallsState.selectedNhtsaModel || v.model)}.</p>
+              </div>
+            </div>
+          </div>
+          <p style="margin: 0; line-height: 1.5; color: var(--text-secondary); font-size: 14px;">
+            While no owner complaints have been registered with the federal government for this model year, general wear and mechanical faults can still exist on individual used cars. Always perform a test drive and have an independent certified mechanic inspect the car prior to purchase.
+          </p>
+          <div class="form-group" style="margin-top: 16px;">
+            <label for="inspect-note-general" class="form-label" style="font-weight: 600;">
+              Your general inspection notes:
             </label>
-            <textarea id="inspect-note-${area.id}" class="form-textarea" rows="2" placeholder="e.g. Test drove at 45 mph, slight squeak when braking on downhill…" data-note-id="${area.id}">${escapeHtml(state.notes[area.id] || "")}</textarea>
+            <textarea id="inspect-note-general" class="form-textarea" rows="3" placeholder="e.g. Test drive observations, mechanic findings, or specific questions for the seller…" data-note-id="general">${escapeHtml(state.notes["general"] || "")}</textarea>
           </div>
         </article>
-      `).join("")}
+      ` : `
+        <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <span style="font-size: 13px; color: var(--text-secondary);">
+            Showing top <strong>${state.complaintsState.topProblemAreas.length}</strong> problem areas from <strong>${state.complaintsState.totalComplaints.toLocaleString()}</strong> owner complaint(s) reported to NHTSA
+          </span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          ${state.complaintsState.topProblemAreas.map(area => `
+            <article class="card" aria-labelledby="inspect-heading-${escapeHtml(area.key)}">
+              <div class="problem-card-header">
+                <div class="card-title-group" style="flex: 1;">
+                  <span class="icon-tile">${area.icon}</span>
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px;">
+                      <h2 id="inspect-heading-${escapeHtml(area.key)}" class="card-title" style="font-size: 18px; margin: 0;">
+                        ${escapeHtml(area.title)}
+                      </h2>
+                      <span class="recall-campaign-badge" style="font-size: 12px; font-weight: 700;">
+                        ${area.count.toLocaleString()} complaint${area.count === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <p class="card-description" style="margin: 0;">${escapeHtml(area.summary)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Safety Flags Row: crashes, fires, injuries -->
+              <div class="safety-flags-group">
+                ${renderSafetyFlagsHtml(area)}
+              </div>
+
+              <!-- What to look and listen for -->
+              <div class="problem-area-symptoms">
+                <strong>What to look and listen for:</strong> ${escapeHtml(area.whatToLookFor)}
+              </div>
+
+              <!-- Session Notes Box -->
+              <div class="form-group" style="margin-top: 14px;">
+                <label for="inspect-note-${escapeHtml(area.key)}" class="form-label" style="font-weight: 600; font-size: 13px;">
+                  Your inspection notes for ${escapeHtml(area.title)}:
+                </label>
+                <textarea id="inspect-note-${escapeHtml(area.key)}" class="form-textarea" rows="2" placeholder="e.g. Test drove at 45 mph, checked for warning lights, mechanic will inspect during lift test…" data-note-id="${escapeHtml(area.key)}">${escapeHtml(state.notes[area.key] || state.notes[area.category] || "")}</textarea>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      `}
     </div>
   `;
 
@@ -2350,12 +2801,12 @@ function printReport() {
   if (!printArea) return;
 
   const recalls = state.recallsState.recalls || [];
-  const fetchTime = state.recallsState.fetchTimestamp || new Date().toLocaleString();
+  const fetchTime = state.complaintsState.fetchTimestamp || state.recallsState.fetchTimestamp || new Date().toLocaleString();
 
   printArea.innerHTML = `
     <h1>Lemonaid Vehicle Pre-Purchase Report</h1>
     <p class="muted">
-      Generated ${new Date().toLocaleDateString()} · Data: NHTSA public datasets (vPIC, Recalls) · Fetched: ${escapeHtml(fetchTime)}
+      Generated ${new Date().toLocaleDateString()} · Data: NHTSA public datasets (vPIC, Recalls, Complaints) · Fetched: ${escapeHtml(fetchTime)}
     </p>
 
     <div class="print-section">
@@ -2401,21 +2852,48 @@ function printReport() {
     </div>
 
     <div class="print-section">
+      <h2>Things to Check: Top Problem Areas (NHTSA Owner Complaints)</h2>
+      <p class="muted">
+        NHTSA public records show ${state.complaintsState.totalComplaints || 0} total owner complaint(s) on file for this vehicle model year.
+      </p>
+      ${state.complaintsState.error ? `
+        <p>⚠️ Unable to verify owner complaints from NHTSA (${escapeHtml(state.complaintsState.error)}). Do not assume 0 complaints.</p>
+      ` : (state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0) ? `
+        <p>✔ No owner complaints on file with NHTSA for this model year.</p>
+        <p>
+          <strong>General Inspection Notes:</strong><br>
+          <em>${escapeHtml(state.notes["general"] || "No notes recorded.")}</em>
+        </p>
+      ` : (state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length > 0) ? `
+        ${state.complaintsState.topProblemAreas.map(area => {
+          const safetyInfo = [];
+          if (area.crashes > 0) safetyInfo.push(`${area.crashes} crash(es)`);
+          if (area.fires > 0) safetyInfo.push(`${area.fires} fire(s)`);
+          if (area.injuries > 0) safetyInfo.push(`${area.injuries} injury/injuries`);
+          const safetyText = safetyInfo.length > 0 ? safetyInfo.join(", ") + " reported" : "No crashes, fires, or injuries reported";
+          const userNote = state.notes[area.key] || state.notes[area.category] || "No notes recorded.";
+          return `
+            <div style="margin-bottom: 12pt; break-inside: avoid;">
+              <p style="margin: 0 0 2pt;">
+                <strong>${escapeHtml(area.title)}</strong> (${area.count.toLocaleString()} complaint${area.count === 1 ? "" : "s"})<br>
+                <span><strong>Safety record:</strong> ${escapeHtml(safetyText)}</span><br>
+                <span><strong>What to look and listen for:</strong> ${escapeHtml(area.whatToLookFor)}</span><br>
+                <span><strong>Your inspection notes:</strong> <em>${escapeHtml(userNote)}</em></span>
+              </p>
+            </div>
+          `;
+        }).join("")}
+      ` : `
+        <p>Complaints lookup has not been performed yet.</p>
+      `}
+    </div>
+
+    <div class="print-section">
       <h2>Pre-Purchase Checklist (${state.checklist.size} of ${CHECKLIST_ITEMS.length} completed)</h2>
       ${CHECKLIST_ITEMS.map(it => `
         <div class="check-item">
           [ ${state.checklist.has(it.id) ? "X" : " "} ] ${escapeHtml(it.text)}
         </div>
-      `).join("")}
-    </div>
-
-    <div class="print-section">
-      <h2>Inspection Notes</h2>
-      ${INSPECT_AREAS.map(area => `
-        <p>
-          <strong>${escapeHtml(area.title)}:</strong><br>
-          <em>${escapeHtml(state.notes[area.id] || "No notes recorded.")}</em>
-        </p>
       `).join("")}
     </div>
 
@@ -2427,7 +2905,7 @@ function printReport() {
     </div>
 
     <p class="muted" style="margin-top: 18pt; border-top: 1pt solid #ccc; padding-top: 6pt;">
-      Lemonaid is an informational decision-support tool. Always arrange an independent inspection by a certified mechanic prior to purchase.
+      Lemonaid is an informational decision-support tool built from public NHTSA data. Always arrange an independent inspection by a certified mechanic prior to purchase.
     </p>
   `;
 
