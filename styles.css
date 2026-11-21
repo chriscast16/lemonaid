@@ -124,14 +124,17 @@ html, body {
   height: var(--appbar-height);
   min-width: 0;
   max-width: 100%;
+  overflow: hidden;
 }
 
 .brand-wrapper {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
+  gap: 10px;
+  height: 100%;
+  max-height: var(--appbar-height);
   flex-shrink: 0;
+  overflow: hidden;
   text-decoration: none;
   color: inherit;
   cursor: pointer;
@@ -1197,15 +1200,17 @@ html, body {
   }
 
   .brand-wrapper {
-    gap: 6px;
+    gap: 10px;
   }
 
   .brand-mark {
     height: 28px;
+    width: auto;
   }
 
   .brand-wordmark {
     height: 15px;
+    width: auto;
   }
 
   .badge-prototype {
