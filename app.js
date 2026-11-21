@@ -257,6 +257,9 @@ function createEmptyComplaintsState(loading = false) {
     totalComplaints: null,
     topProblemAreas: null,
     selectedModel: null,
+    matchedVariantModel: null,
+    variantResults: [],
+    modelConfirmedInNhtsa: false,
     fetchTimestamp: null
   };
 }
@@ -680,14 +683,129 @@ function formatNhtsaTimestamp() {
   });
 }
 
-async function fetchNhtsaRecallModels(year, make) {
-  const modelsUrl = `https://api.nhtsa.gov/products/vehicle/models?modelYear=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}&issueType=r`;
+async function fetchNhtsaModelsList(year, make, issueType = "r") {
+  const modelsUrl = `https://api.nhtsa.gov/products/vehicle/models?modelYear=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}&issueType=${encodeURIComponent(issueType)}`;
   const data = await fetchWithTimeout(modelsUrl);
   const rawList = (data && (data.results || data.Results)) || [];
   return [...new Set(rawList.map(item => {
     if (typeof item === "string") return item.trim();
     return (item.model || item.Model || item.modelName || item.ModelName || "").trim();
   }).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+async function fetchNhtsaRecallModels(year, make) {
+  return fetchNhtsaModelsList(year, make, "r");
+}
+
+// When complaintsByVehicle returns 0, query likely model-name variants in parallel
+async function resolveZeroComplaintsWithVariants(vehicle, queryModel, existingRecallModels = []) {
+  const year = (vehicle.year || "").trim();
+  const make = (vehicle.make || "").trim();
+
+  const [cModelsOutcome, rModelsOutcome] = await Promise.allSettled([
+    fetchNhtsaModelsList(year, make, "c"),
+    existingRecallModels.length > 0
+      ? Promise.resolve(existingRecallModels)
+      : fetchNhtsaModelsList(year, make, "r")
+  ]);
+
+  const complaintModels = cModelsOutcome.status === "fulfilled" ? cModelsOutcome.value : [];
+  const recallModels = rModelsOutcome.status === "fulfilled" ? rModelsOutcome.value : [];
+  const recallModelsSucceeded = rModelsOutcome.status === "fulfilled";
+
+  const allListedModels = [...new Set([...complaintModels, ...recallModels])];
+  const queryLower = queryModel.toLowerCase();
+
+  // Only confirm exact 0 complaints if the exact model name is present in NHTSA's own model list
+  const exactConfirmed = allListedModels.some(m => m.trim().toLowerCase() === queryLower);
+
+  // Build candidate variant list: listed names starting with queryModel + common duty suffixes
+  const seenLower = new Set([queryLower]);
+  const candidateVariants = [];
+
+  allListedModels.forEach(m => {
+    const trimmed = m.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith(queryLower) && !seenLower.has(lower)) {
+      seenLower.add(lower);
+      candidateVariants.push(trimmed);
+    }
+  });
+
+  [" 1500", " 2500", " 3500", " HD"].forEach(suffix => {
+    const candidate = `${queryModel}${suffix}`;
+    const lower = candidate.toLowerCase();
+    if (!seenLower.has(lower)) {
+      seenLower.add(lower);
+      candidateVariants.push(candidate);
+    }
+  });
+
+  // Query all candidate variants in parallel
+  const variantOutcomes = await Promise.allSettled(
+    candidateVariants.map(async (variantName) => {
+      const url = `https://api.nhtsa.gov/complaints/complaintsByVehicle?make=${encodeURIComponent(make)}&model=${encodeURIComponent(variantName)}&modelYear=${encodeURIComponent(year)}`;
+      const data = await fetchWithTimeout(url);
+      const parsed = parseComplaintsResponse(data);
+      return {
+        model: variantName,
+        totalComplaints: parsed.totalCount,
+        topProblemAreas: parsed.topProblemAreas
+      };
+    })
+  );
+
+  const variantResults = variantOutcomes
+    .filter(o => o.status === "fulfilled" && o.value && o.value.totalComplaints > 0)
+    .map(o => o.value)
+    .sort((a, b) => (b.totalComplaints - a.totalComplaints) || a.model.localeCompare(b.model));
+
+  return {
+    variantResults,
+    exactConfirmed,
+    recallModels,
+    recallModelsSucceeded
+  };
+}
+
+function selectComplaintVariant(modelName) {
+  const match = (state.complaintsState.variantResults || []).find(v => v.model === modelName);
+  if (!match) return;
+  state.complaintsState.selectedModel = match.model;
+  state.complaintsState.matchedVariantModel = match.model;
+  state.complaintsState.totalComplaints = match.totalComplaints;
+  state.complaintsState.topProblemAreas = match.topProblemAreas;
+  renderActiveView();
+}
+
+function renderComplaintVariantBarHtml(selectId) {
+  const matched = state.complaintsState.matchedVariantModel;
+  const variants = state.complaintsState.variantResults || [];
+  if (!matched) return "";
+
+  return `
+    <div class="alert alert-info" style="padding: 10px 12px; margin-bottom: 12px; font-size: 13px;">
+      <span class="alert-icon" aria-hidden="true" style="font-size: 16px;">ℹ️</span>
+      <div class="alert-content" style="width: 100%; display: flex; flex-direction: column; gap: 6px;">
+        <div>
+          <strong>Complaints filed under ${escapeHtml(matched)}</strong>
+          <span style="color: var(--text-secondary);">(${state.complaintsState.totalComplaints.toLocaleString()} complaint${state.complaintsState.totalComplaints === 1 ? "" : "s"})</span>
+        </div>
+        ${variants.length > 1 ? `
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <label for="${escapeHtml(selectId)}" class="form-label" style="font-size: 12px; margin: 0;">Switch variant:</label>
+            <select id="${escapeHtml(selectId)}" class="form-select complaint-variant-select" style="font-size: 12px; padding: 6px 8px; min-height: 36px; width: auto; max-width: 100%;">
+              ${variants.map(vr => `
+                <option value="${escapeHtml(vr.model)}" ${vr.model === matched ? "selected" : ""}>
+                  ${escapeHtml(vr.model)} (${vr.totalComplaints.toLocaleString()})
+                </option>
+              `).join("")}
+            </select>
+          </div>
+        ` : ""}
+      </div>
+    </div>
+  `;
 }
 
 function parseComplaintsResponse(data) {
@@ -807,23 +925,33 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
 
   const nowStr = formatNhtsaTimestamp();
 
-  // Apply complaints result independently
-  let complaintsCount = 0;
+  // Evaluate direct complaints outcome
+  let directComplaintsCount = 0;
   let complaintsSucceeded = false;
+  let needComplaintVariants = false;
+
   if (complaintsRequestId === currentComplaintsRequestId) {
     if (complaintsOutcome.status === "fulfilled") {
       const parsed = parseComplaintsResponse(complaintsOutcome.value);
-      complaintsCount = parsed.totalCount;
+      directComplaintsCount = parsed.totalCount;
       complaintsSucceeded = true;
-      state.complaintsState = {
-        loading: false,
-        loaded: true,
-        error: null,
-        totalComplaints: parsed.totalCount,
-        topProblemAreas: parsed.topProblemAreas,
-        selectedModel: queryModel,
-        fetchTimestamp: nowStr
-      };
+      if (parsed.totalCount > 0) {
+        state.complaintsState = {
+          loading: false,
+          loaded: true,
+          error: null,
+          totalComplaints: parsed.totalCount,
+          topProblemAreas: parsed.topProblemAreas,
+          selectedModel: queryModel,
+          matchedVariantModel: null,
+          variantResults: [],
+          modelConfirmedInNhtsa: true,
+          fetchTimestamp: nowStr
+        };
+      } else {
+        // Direct complaints returned 0 -> keep loading while checking likely variants in parallel
+        needComplaintVariants = true;
+      }
     } else {
       const err = complaintsOutcome.reason;
       state.complaintsState = {
@@ -836,7 +964,8 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
     }
   }
 
-  // Handle recalls failure
+  // Evaluate direct recalls outcome
+  let recallsResolved = false;
   if (recallsOutcome.status === "rejected") {
     const err = recallsOutcome.reason;
     state.recallsState.loading = false;
@@ -844,34 +973,93 @@ async function loadRecallsForVehicle(vehicle, manualModelChoice = null) {
     state.recallsState.error = (err && err.isNetworkError)
       ? "Couldn't reach NHTSA. Check your connection and try again."
       : ((err && err.message) || "Failed to load safety recalls from NHTSA. Please try again.");
+    recallsResolved = true;
+  } else {
+    const recalls = (recallsOutcome.value && (recallsOutcome.value.results || recallsOutcome.value.Results)) || [];
+    if (recalls.length > 0 || (complaintsSucceeded && directComplaintsCount > 0)) {
+      state.recallsState.loading = false;
+      state.recallsState.error = null;
+      state.recallsState.dataUnavailable = false;
+      state.recallsState.modelSelectionNeeded = false;
+      state.recallsState.modelRecognizedByNhtsa = true;
+      state.recallsState.selectedNhtsaModel = queryModel;
+      state.recallsState.recalls = recalls;
+      state.recallsState.fetchTimestamp = nowStr;
+      recallsResolved = true;
+    }
+  }
+
+  // Render immediately if recalls finished while complaint variants are still resolving
+  if (recallsResolved && !needComplaintVariants) {
     renderActiveView();
     return;
   }
-
-  const recalls = (recallsOutcome.value && (recallsOutcome.value.results || recallsOutcome.value.Results)) || [];
-
-  // Step 2: If either recalls or complaints returned results, treat the model name as recognized
-  if (recalls.length > 0 || (complaintsSucceeded && complaintsCount > 0)) {
-    state.recallsState.loading = false;
-    state.recallsState.error = null;
-    state.recallsState.dataUnavailable = false;
-    state.recallsState.modelSelectionNeeded = false;
-    state.recallsState.modelRecognizedByNhtsa = true;
-    state.recallsState.selectedNhtsaModel = queryModel;
-    state.recallsState.recalls = recalls;
-    state.recallsState.fetchTimestamp = nowStr;
+  if (recallsResolved && needComplaintVariants) {
     renderActiveView();
-    return;
   }
 
-  // Step 3: Both recalls and complaints returned 0 -> consult NHTSA's recall model list
+  // Step 2 (if needed): Resolve 0 complaints via likely variants, and/or confirm 0 recalls via model list
   let recallModels = existingModels;
-  if (recallModels.length === 0) {
+  let recallModelsSucceeded = existingModels.length > 0;
+
+  if (needComplaintVariants) {
+    const variantData = await resolveZeroComplaintsWithVariants(targetVehicle, queryModel, existingModels);
+    if (state.vehicle !== targetVehicle) return;
+
+    if (variantData.recallModelsSucceeded && recallModels.length === 0) {
+      recallModels = variantData.recallModels;
+      recallModelsSucceeded = true;
+      state.recallsState.nhtsaRecallModels = recallModels;
+    }
+
+    if (complaintsRequestId === currentComplaintsRequestId) {
+      if (variantData.variantResults.length > 0) {
+        const best = variantData.variantResults[0];
+        state.complaintsState = {
+          loading: false,
+          loaded: true,
+          error: null,
+          totalComplaints: best.totalComplaints,
+          topProblemAreas: best.topProblemAreas,
+          selectedModel: best.model,
+          matchedVariantModel: best.model,
+          variantResults: variantData.variantResults,
+          modelConfirmedInNhtsa: true,
+          fetchTimestamp: formatNhtsaTimestamp()
+        };
+      } else {
+        state.complaintsState = {
+          loading: false,
+          loaded: true,
+          error: null,
+          totalComplaints: 0,
+          topProblemAreas: [],
+          selectedModel: queryModel,
+          matchedVariantModel: null,
+          variantResults: [],
+          modelConfirmedInNhtsa: variantData.exactConfirmed,
+          fetchTimestamp: formatNhtsaTimestamp()
+        };
+      }
+    }
+  }
+
+  if (recallsResolved) {
+    renderActiveView();
+    return;
+  }
+
+  // Step 3: Both direct recalls and direct complaints returned 0 -> consult NHTSA's recall model list
+  if (requestId !== currentRecallsRequestId || state.vehicle !== targetVehicle) {
+    return;
+  }
+
+  if (!recallModelsSucceeded) {
     try {
       recallModels = await fetchNhtsaRecallModels(year, make);
+      recallModelsSucceeded = true;
     } catch (err) {
       if (requestId !== currentRecallsRequestId || state.vehicle !== targetVehicle) return;
-      // Could not confirm against NHTSA's model list -> never claim "0 recalls on file"
       state.recallsState.loading = false;
       state.recallsState.error = null;
       state.recallsState.dataUnavailable = false;
@@ -976,12 +1164,54 @@ async function loadComplaintsForVehicle(vehicle, manualModelChoice = null) {
 
     const parsed = parseComplaintsResponse(data);
 
-    state.complaintsState.loading = false;
-    state.complaintsState.loaded = true;
-    state.complaintsState.error = null;
-    state.complaintsState.totalComplaints = parsed.totalCount;
-    state.complaintsState.topProblemAreas = parsed.topProblemAreas;
-    state.complaintsState.fetchTimestamp = formatNhtsaTimestamp();
+    if (parsed.totalCount > 0) {
+      state.complaintsState.loading = false;
+      state.complaintsState.loaded = true;
+      state.complaintsState.error = null;
+      state.complaintsState.totalComplaints = parsed.totalCount;
+      state.complaintsState.topProblemAreas = parsed.topProblemAreas;
+      state.complaintsState.matchedVariantModel = null;
+      state.complaintsState.variantResults = [];
+      state.complaintsState.modelConfirmedInNhtsa = true;
+      state.complaintsState.fetchTimestamp = formatNhtsaTimestamp();
+    } else {
+      const variantData = await resolveZeroComplaintsWithVariants(
+        targetVehicle,
+        queryModel,
+        state.recallsState.nhtsaRecallModels || []
+      );
+      if (requestId !== currentComplaintsRequestId || state.vehicle !== targetVehicle) {
+        return;
+      }
+      if (variantData.variantResults.length > 0) {
+        const best = variantData.variantResults[0];
+        state.complaintsState = {
+          loading: false,
+          loaded: true,
+          error: null,
+          totalComplaints: best.totalComplaints,
+          topProblemAreas: best.topProblemAreas,
+          selectedModel: best.model,
+          matchedVariantModel: best.model,
+          variantResults: variantData.variantResults,
+          modelConfirmedInNhtsa: true,
+          fetchTimestamp: formatNhtsaTimestamp()
+        };
+      } else {
+        state.complaintsState = {
+          loading: false,
+          loaded: true,
+          error: null,
+          totalComplaints: 0,
+          topProblemAreas: [],
+          selectedModel: queryModel,
+          matchedVariantModel: null,
+          variantResults: [],
+          modelConfirmedInNhtsa: variantData.exactConfirmed,
+          fetchTimestamp: formatNhtsaTimestamp()
+        };
+      }
+    }
   } catch (err) {
     if (requestId !== currentComplaintsRequestId || state.vehicle !== targetVehicle) {
       return;
@@ -2234,16 +2464,26 @@ function renderOverviewPage(container) {
               <div>Confirm the exact NHTSA model name above to load owner complaints.</div>
             </div>
           </div>
-        ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0) ? `
+        ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0 && state.complaintsState.modelConfirmedInNhtsa) ? `
           <div style="padding: 8px 0;">
-            <p style="margin: 0 0 10px; font-size: 13px; color: var(--text-secondary);">
+            <p style="margin: 0 0 10px; font-size: 13px; color: var(--status-good); font-weight: 600;">
               ✔ No owner complaints on file with NHTSA for this model year.
             </p>
             <button type="button" class="btn btn-subtle btn-sm" style="padding-left: 0;" onclick="navigateTo('inspect')">
               Open inspection notes →
             </button>
           </div>
+        ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0 && !state.complaintsState.modelConfirmedInNhtsa) ? `
+          <div style="padding: 8px 0;">
+            <p style="margin: 0 0 10px; font-size: 13px; color: var(--text-secondary); line-height: 1.45;">
+              No complaints filed under “${escapeHtml(state.complaintsState.selectedModel || v.model)}” — NHTSA may list this model under a more specific name. Check <a href="https://www.nhtsa.gov" target="_blank" rel="noopener" style="color: var(--brand-text); font-weight: 600;">nhtsa.gov</a>.
+            </p>
+            <button type="button" class="btn btn-subtle btn-sm" style="padding-left: 0;" onclick="navigateTo('inspect')">
+              Open inspection notes →
+            </button>
+          </div>
         ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length > 0) ? `
+          ${renderComplaintVariantBarHtml("overview-complaint-variant-select")}
           <ul class="numbered-list">
             ${state.complaintsState.topProblemAreas.slice(0, 3).map(area => `
               <li class="numbered-row">
@@ -2289,6 +2529,14 @@ function renderOverviewPage(container) {
   `;
 
   container.appendChild(page);
+
+  // Setup complaint variant switcher if active
+  const overviewVariantSelect = page.querySelector("#overview-complaint-variant-select");
+  if (overviewVariantSelect) {
+    overviewVariantSelect.addEventListener("change", () => {
+      selectComplaintVariant(overviewVariantSelect.value);
+    });
+  }
 
   // Setup overview model picker listeners if active
   const overviewModelForm = page.querySelector("#overview-model-pick-form");
@@ -2840,13 +3088,13 @@ function renderInspectPage(container) {
             </button>
           </div>
         </div>
-      ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0) ? `
+      ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0 && state.complaintsState.modelConfirmedInNhtsa) ? `
         <article class="card">
           <div class="card-header">
             <div class="card-title-group">
               <span class="icon-tile sm">✔</span>
               <div>
-                <h2 class="card-title" style="font-size: 18px;">No owner complaints on file with NHTSA</h2>
+                <h2 class="card-title" style="font-size: 18px; color: var(--status-good);">No owner complaints on file with NHTSA</h2>
                 <p class="card-description">NHTSA has received 0 safety complaints for the ${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(complaintsModelName)}.</p>
               </div>
             </div>
@@ -2861,10 +3109,32 @@ function renderInspectPage(container) {
             <textarea id="inspect-note-general" class="form-textarea" rows="3" placeholder="e.g. Test drive observations, mechanic findings, or specific questions for the seller…" data-note-id="general">${escapeHtml(getNoteForArea(v, "general"))}</textarea>
           </div>
         </article>
+      ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0 && !state.complaintsState.modelConfirmedInNhtsa) ? `
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="icon-tile sm">ℹ</span>
+              <div>
+                <h2 class="card-title" style="font-size: 18px;">No complaints filed under “${escapeHtml(complaintsModelName)}”</h2>
+                <p class="card-description">NHTSA may list this model under a more specific name.</p>
+              </div>
+            </div>
+          </div>
+          <p style="margin: 0; line-height: 1.5; color: var(--text-secondary); font-size: 14px;">
+            No complaints filed under “${escapeHtml(complaintsModelName)}” — NHTSA may list this model under a more specific name. Check <a href="https://www.nhtsa.gov" target="_blank" rel="noopener" style="color: var(--brand-text); font-weight: 600;">nhtsa.gov</a>.
+          </p>
+          <div class="form-group" style="margin-top: 16px;">
+            <label for="inspect-note-general" class="form-label" style="font-weight: 600;">
+              Your general inspection notes:
+            </label>
+            <textarea id="inspect-note-general" class="form-textarea" rows="3" placeholder="e.g. Test drive observations, mechanic findings, or specific questions for the seller…" data-note-id="general">${escapeHtml(getNoteForArea(v, "general"))}</textarea>
+          </div>
+        </article>
       ` : (state.complaintsState.loaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length > 0) ? `
+        ${renderComplaintVariantBarHtml("inspect-complaint-variant-select")}
         <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
           <span style="font-size: 13px; color: var(--text-secondary);">
-            Showing top <strong>${state.complaintsState.topProblemAreas.length}</strong> problem areas from <strong>${state.complaintsState.totalComplaints.toLocaleString()}</strong> owner complaint(s) reported to NHTSA
+            Showing top <strong>${state.complaintsState.topProblemAreas.length}</strong> problem areas from <strong>${state.complaintsState.totalComplaints.toLocaleString()}</strong> owner complaint(s) reported to NHTSA${state.complaintsState.matchedVariantModel ? ` under <strong>${escapeHtml(state.complaintsState.matchedVariantModel)}</strong>` : ""}
           </span>
         </div>
 
@@ -2923,6 +3193,14 @@ function renderInspectPage(container) {
   `;
 
   container.appendChild(page);
+
+  // Attach complaint variant switcher if active
+  const inspectVariantSelect = page.querySelector("#inspect-complaint-variant-select");
+  if (inspectVariantSelect) {
+    inspectVariantSelect.addEventListener("change", () => {
+      selectComplaintVariant(inspectVariantSelect.value);
+    });
+  }
 
   // Attach per-vehicle auto-save notes listeners
   page.querySelectorAll("textarea[data-note-id]").forEach(textarea => {
@@ -3296,17 +3574,35 @@ function printReport() {
 
     <div class="print-section">
       <h2>Things to Check: Top Problem Areas (NHTSA Owner Complaints)</h2>
-      ${complaintsLoaded ? `
+      ${(complaintsLoaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length > 0) ? `
         <p class="muted">
-          NHTSA public records show ${state.complaintsState.totalComplaints.toLocaleString()} total owner complaint(s) on file for this vehicle model year.
+          ${state.complaintsState.matchedVariantModel
+            ? `Complaints filed under <strong>${escapeHtml(state.complaintsState.matchedVariantModel)}</strong> (${state.complaintsState.totalComplaints.toLocaleString()} total owner complaint(s) on file for this model year).`
+            : `NHTSA public records show ${state.complaintsState.totalComplaints.toLocaleString()} total owner complaint(s) on file for this vehicle model year.`}
+          ${(state.complaintsState.variantResults && state.complaintsState.variantResults.length > 1)
+            ? ` Other NHTSA variants with complaints: ${state.complaintsState.variantResults
+                .filter(vr => vr.model !== state.complaintsState.matchedVariantModel)
+                .map(vr => `${escapeHtml(vr.model)} (${vr.totalComplaints.toLocaleString()})`)
+                .join(", ")}.`
+            : ""}
+        </p>
+      ` : (complaintsLoaded && state.complaintsState.modelConfirmedInNhtsa) ? `
+        <p class="muted">
+          NHTSA public records show 0 total owner complaint(s) on file for this vehicle model year.
         </p>
       ` : ""}
       ${state.complaintsState.loading ? `
         <p>Owner complaints check is still in progress. Re-print once loading finishes.</p>
       ` : state.complaintsState.error ? `
         <p>⚠️ Unable to verify owner complaints from NHTSA (${escapeHtml(state.complaintsState.error)}). Do not assume 0 complaints.</p>
-      ` : (complaintsLoaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0) ? `
+      ` : (complaintsLoaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0 && state.complaintsState.modelConfirmedInNhtsa) ? `
         <p>✔ No owner complaints on file with NHTSA for this model year.</p>
+        <p>
+          <strong>General Inspection Notes:</strong><br>
+          <em>${escapeHtml(getNoteForArea(v, "general") || "No notes recorded.")}</em>
+        </p>
+      ` : (complaintsLoaded && state.complaintsState.topProblemAreas && state.complaintsState.topProblemAreas.length === 0 && !state.complaintsState.modelConfirmedInNhtsa) ? `
+        <p>No complaints filed under “${escapeHtml(state.complaintsState.selectedModel || (v ? v.model : ""))}” — NHTSA may list this model under a more specific name. Check nhtsa.gov.</p>
         <p>
           <strong>General Inspection Notes:</strong><br>
           <em>${escapeHtml(getNoteForArea(v, "general") || "No notes recorded.")}</em>
