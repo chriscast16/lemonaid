@@ -127,29 +127,32 @@ html, body {
 }
 
 .brand-wrapper {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-height: 44px;
+  flex-shrink: 0;
   text-decoration: none;
   color: inherit;
   cursor: pointer;
 }
 
-.brand-logo-tile {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  background-color: var(--brand-fill);
-  color: var(--brand-dark-text);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+.brand-mark {
+  height: 32px;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
 }
 
-.brand-title {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
+.brand-wordmark {
+  height: 18px;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .brand-wordmark {
+  filter: brightness(0) invert(1);
 }
 
 .badge-prototype {
@@ -162,10 +165,12 @@ html, body {
   border: 1px solid var(--brand-fill);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
 .app-spacer {
   flex-grow: 1;
+  min-width: 0;
 }
 
 .icon-btn {
@@ -1193,17 +1198,14 @@ html, body {
 
   .brand-wrapper {
     gap: 6px;
-    min-width: 0;
   }
 
-  .brand-logo-tile {
-    width: 24px;
-    height: 24px;
-    flex-shrink: 0;
+  .brand-mark {
+    height: 28px;
   }
 
-  .brand-title {
-    font-size: 14px;
+  .brand-wordmark {
+    height: 15px;
   }
 
   .badge-prototype {
@@ -1214,11 +1216,15 @@ html, body {
   }
 
   .app-bar .icon-btn {
-    padding: 6px 8px;
-    font-size: 13px;
-    gap: 4px;
+    padding: 0;
+    gap: 0;
     min-height: 44px;
     min-width: 44px;
+    flex-shrink: 0;
+  }
+
+  #about-btn .about-btn-label {
+    display: none;
   }
 
   .dash-grid {
@@ -1279,6 +1285,12 @@ html, body {
   .icon-btn.menu-toggle {
     min-height: 44px;
     min-width: 44px;
+  }
+}
+
+@media (max-width: 374px) {
+  .badge-prototype {
+    display: none;
   }
 }
 

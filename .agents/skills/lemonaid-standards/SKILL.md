@@ -22,6 +22,7 @@ A buyer enters a VIN (or picks year, make, and model) and gets a plain-English r
   - `styles.css`: all styles
   - `app.js`: all logic
   - `api-test.html`: NHTSA connection check (keep it; do not delete)
+  - `assets/`: logo and icon images, all lowercase names (`lemonaid-mark.png`, `lemonaid-wordmark.png`, `favicon.png`, `apple-touch-icon.png`)
 - Link files with relative paths (`styles.css`, not `/styles.css`), because the site is served from a subfolder.
 - No API keys, passwords, accounts, servers, or paid services. No real personal information in code, sample data, or prompts.
 - Never run git commands. The team saves work with GitHub Desktop.
@@ -52,13 +53,13 @@ Use only these free NHTSA endpoints, called with `fetch()` from the browser:
 
 - Font: `"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif`.
 - Brand yellow ramp. Use these values; do not invent new brand colors.
-  - Brand fill (primary buttons, logo tile, active nav): `#FFB900`, hover `#E0A200`, pressed `#B88400`
+  - Brand fill (primary buttons, active nav): `#FFB900`, hover `#E0A200`, pressed `#B88400`
   - Text and icons on yellow are always dark `#241A00`, never white
   - Brand text and links on light backgrounds: `#8F6600`. In dark mode: `#FFCA42`
   - Soft brand tint (icon tiles, hero area): `#FFF9EF` light, `#312300` dark
 - Neutrals (light / dark): app bar and nav `#F0F0F0` / `#0A0A0A`, content area `#FAFAFA` / `#1F1F1F`, cards `#FFFFFF` / `#292929`, text `#242424` / `#FFFFFF`, secondary text `#616161` / `#ADADAD`, borders `#E0E0E0` / `#3D3D3D`.
 - Status: good `#0E700E`, warning `#BC4B09`, serious `#B10E1C`. Always pair a color with an icon or word, never color alone.
-- Layout: a top app bar (48px) with the Lemonaid lemon logo, a "Prototype" badge, an About button, and a light/dark toggle. On screens 1024px and wider, show a left nav (260px). Below that, show a menu button that opens the nav as an overlay. Content sits on rounded cards (8px radius, soft shadow), max width 1200px. Grids collapse to one column below 640px.
+- Layout: a top app bar (48px) with the Lemonaid logo images (`assets/lemonaid-mark.png` and `assets/lemonaid-wordmark.png`, inverted to white in dark mode), a "Prototype" badge (hidden under 375px wide), an About button (icon-only under 640px wide), and a light/dark toggle. On screens 1024px and wider, show a left nav (260px). Below that, show a menu button that opens the nav as an overlay. Content sits on rounded cards (8px radius, soft shadow), max width 1200px. Grids collapse to one column below 640px.
 - Keep the existing pages and names: Home, Report overview, Things to check, Pre-purchase checklist, Safety recalls, Seller and costs.
 - Keep the existing features working: the checklist with progress bar and reset, the per-issue notes, Copy questions, Print report (print-only layout), Recently viewed, and the dark mode toggle saved in localStorage.
 - Tone: calm, supportive, plain English, written for someone who has never bought a car. Do not use scare words. Always recommend an independent mechanic's inspection.
