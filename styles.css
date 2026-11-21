@@ -135,21 +135,24 @@ html, body {
   cursor: pointer;
 }
 
-.brand-logo-tile {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  background-color: var(--brand-fill);
-  color: var(--brand-dark-text);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+/* Lemonaid logomark (lemon car) and logotype images */
+.brand-mark {
+  display: block;
+  height: 32px;
+  width: auto;
+  flex-shrink: 0;
 }
 
-.brand-title {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
+.brand-wordmark {
+  display: block;
+  height: 18px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+/* The logotype is navy; show it in white on the dark theme */
+[data-theme="dark"] .brand-wordmark {
+  filter: brightness(0) invert(1);
 }
 
 .badge-prototype {
@@ -1196,14 +1199,21 @@ html, body {
     min-width: 0;
   }
 
-  .brand-logo-tile {
-    width: 24px;
-    height: 24px;
+  .brand-wrapper {
     flex-shrink: 0;
   }
 
-  .brand-title {
-    font-size: 14px;
+  .brand-mark {
+    height: 28px;
+  }
+
+  .brand-wordmark {
+    height: 15px;
+  }
+
+  /* Make room for the logo: About becomes icon-only (it keeps its aria-label) */
+  #about-btn span {
+    display: none;
   }
 
   .badge-prototype {
@@ -1279,6 +1289,13 @@ html, body {
   .icon-btn.menu-toggle {
     min-height: 44px;
     min-width: 44px;
+  }
+}
+
+/* Very small phones (e.g. 320px): hide the Prototype badge so the theme toggle stays visible */
+@media (max-width: 374px) {
+  .badge-prototype {
+    display: none;
   }
 }
 
