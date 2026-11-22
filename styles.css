@@ -644,6 +644,12 @@ html, body {
   font-size: 13px;
 }
 
+.btn:disabled, .btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .btn-tag {
   min-height: 32px;
   padding: 4px 10px;
@@ -1158,6 +1164,13 @@ html, body {
   color: var(--text-secondary);
 }
 
+/* Desktop nav collapse */
+@media (min-width: 1024px) {
+  .nav-collapsed .nav-drawer {
+    display: none;
+  }
+}
+
 /* Responsive Collapsing */
 @media (max-width: 1023px) {
   .nav-drawer {
@@ -1166,10 +1179,13 @@ html, body {
     left: 0;
     bottom: 0;
     transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.25s ease-in-out, visibility 0.25s ease-in-out;
   }
 
   .nav-drawer.open {
     transform: translateX(0);
+    visibility: visible;
   }
 
   .nav-overlay-backdrop.open {

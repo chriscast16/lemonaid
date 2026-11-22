@@ -292,7 +292,8 @@ function initApp() {
   loadStoredSettings();
   setupEventListeners();
   loadMakesList();
-  renderActiveView();
+  syncNavDrawerState();
+  handleRouteFromHash(true);
 }
 
 function loadStoredSettings() {
@@ -344,8 +345,10 @@ function loadStoredSettings() {
 function sanitizeVehicleSpecs(vehicle) {
   if (!vehicle || typeof vehicle !== "object") return vehicle;
   if (!vehicle.vin) {
+    const label = `${vehicle.year || ""} ${vehicle.make || ""} ${vehicle.model || ""}`.trim();
     return {
       ...vehicle,
+      label: vehicle.label || label,
       trim: "",
       bodyClass: "",
       engineDisplacement: "",
@@ -356,11 +359,16 @@ function sanitizeVehicleSpecs(vehicle) {
       plantCity: ""
     };
   }
+  const cleanVin = String(vehicle.vin).trim().toUpperCase();
+  const last6 = cleanVin.slice(-6);
+  const label = `${vehicle.year || ""} ${vehicle.make || ""} ${vehicle.model || ""} · …${last6}`.trim();
   const plainError = vehicle.errorCode && vehicle.errorCode !== "0"
     ? formatVinDecodeNotice(vehicle.errorCode, vehicle.errorText)
     : null;
   return {
     ...vehicle,
+    vin: cleanVin,
+    label: label,
     bodyClass: vehicle.bodyClass === "Not specified" ? "" : (vehicle.bodyClass || ""),
     driveType: vehicle.driveType === "Not specified" ? "" : (vehicle.driveType || ""),
     plantCountry: formatPlaceName(vehicle.plantCountry || ""),
@@ -411,13 +419,17 @@ function saveNotes() {
   }
 }
 
-// Key notes per vehicle by year, make, model, and area
+// Key notes per vehicle by VIN when available, and by year/make/model only when it isn't
 function getVehicleNoteKey(vehicle, areaKey) {
   if (!vehicle) return String(areaKey || "general");
+  const a = (areaKey || "").trim().toLowerCase();
+  if (vehicle.vin && String(vehicle.vin).trim()) {
+    const v = String(vehicle.vin).trim().toUpperCase();
+    return `vin_${v}_${a}`;
+  }
   const y = (vehicle.year || "").trim().toLowerCase();
   const m = (vehicle.make || "").trim().toLowerCase();
   const md = (vehicle.model || "").trim().toLowerCase();
-  const a = (areaKey || "").trim().toLowerCase();
   return `${y}_${m}_${md}_${a}`;
 }
 
@@ -581,15 +593,22 @@ async function loadMakesList() {
   }
 }
 
-// Load models for make & year from NHTSA vPIC
+// Load models for make & year from NHTSA vPIC (discards stale responses)
+let currentModelsRequestId = 0;
+
 async function loadModelsForMakeYear(make, year) {
   if (!make || !year) return [];
+  const requestId = ++currentModelsRequestId;
   state.loadingModels = true;
   state.modelsLoadError = false;
   updateModelDropdownState();
   try {
     const url = `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${encodeURIComponent(year)}?format=json`;
     const data = await fetchWithTimeout(url);
+    if (requestId !== currentModelsRequestId) {
+      // Newer make or year was requested, discard earlier response
+      return;
+    }
     state.loadingModels = false;
     state.modelsLoadError = false;
     if (data && data.Results && Array.isArray(data.Results)) {
@@ -604,11 +623,24 @@ async function loadModelsForMakeYear(make, year) {
       state.dropdownModels = [];
     }
   } catch (err) {
+    if (requestId !== currentModelsRequestId) {
+      return;
+    }
     state.loadingModels = false;
     state.modelsLoadError = true;
     state.dropdownModels = [];
     console.warn("Failed to load models for make/year:", err.message || err);
   }
+
+  // Safeguard: Check that make and year currently selected in the DOM still match
+  const yearSelect = document.getElementById("select-year");
+  const makeSelect = document.getElementById("select-make");
+  if (yearSelect && makeSelect) {
+    if (String(yearSelect.value) !== String(year) || makeSelect.value.toLowerCase() !== String(make).toLowerCase()) {
+      return;
+    }
+  }
+
   updateModelDropdownOptions();
 }
 
@@ -1433,14 +1465,205 @@ function getSpecExplanation(label, value) {
 // 6. Navigation & Routing
 // ==========================================
 
-function navigateTo(pageId) {
+function buildHash(pageId, vehicle) {
+  const p = pageId || "home";
+  if (p === "home" || !vehicle) {
+    return "#/home";
+  }
+  if (vehicle.vin && String(vehicle.vin).trim()) {
+    return `#/${p}?vin=${encodeURIComponent(String(vehicle.vin).trim().toUpperCase())}`;
+  }
+  if (vehicle.year && vehicle.make && vehicle.model) {
+    const y = encodeURIComponent(String(vehicle.year).trim());
+    const m = encodeURIComponent(String(vehicle.make).trim());
+    const md = encodeURIComponent(String(vehicle.model).trim());
+    return `#/${p}?year=${y}&make=${m}&model=${md}`;
+  }
+  return "#/home";
+}
+
+function parseQueryParams(queryStr) {
+  const params = {};
+  if (!queryStr) return params;
+  queryStr.split("&").forEach(pair => {
+    if (!pair) return;
+    const eqIdx = pair.indexOf("=");
+    const rawKey = eqIdx >= 0 ? pair.slice(0, eqIdx) : pair;
+    const rawVal = eqIdx >= 0 ? pair.slice(eqIdx + 1) : "";
+    try {
+      const k = decodeURIComponent(rawKey.trim());
+      const v = decodeURIComponent(rawVal.replace(/\+/g, " ").trim());
+      params[k] = v;
+    } catch {
+      params[rawKey.trim()] = rawVal.trim();
+    }
+  });
+  return params;
+}
+
+function parseHash(hashStr) {
+  const raw = (hashStr !== undefined ? hashStr : window.location.hash || "").trim();
+  if (!raw || raw === "#" || raw === "#/" || raw === "#/home") {
+    return { page: "home", vin: null, year: null, make: null, model: null, isValid: true };
+  }
+
+  const clean = raw.replace(/^#\/?/, "");
+  const [pathPart, queryPart] = clean.split("?");
+  const page = (pathPart || "").toLowerCase().trim();
+
+  const VALID_PAGES = ["home", "overview", "inspect", "checklist", "recalls", "seller"];
+  if (!VALID_PAGES.includes(page)) {
+    return { page: "home", vin: null, year: null, make: null, model: null, isValid: false };
+  }
+
+  if (page === "home") {
+    return { page: "home", vin: null, year: null, make: null, model: null, isValid: true };
+  }
+
+  if (!queryPart) {
+    return { page, vin: null, year: null, make: null, model: null, isValid: false };
+  }
+
+  const params = parseQueryParams(queryPart);
+  const vin = (params.vin || "").trim().toUpperCase();
+  const year = (params.year || "").trim();
+  const make = (params.make || "").trim();
+  const model = (params.model || "").trim();
+
+  if (vin) {
+    if (vin.length !== 17 || /[IOQ]/.test(vin) || !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
+      return { page, vin, year: null, make: null, model: null, isValid: false };
+    }
+    return { page, vin, year: null, make: null, model: null, isValid: true };
+  }
+
+  if (year && make && model) {
+    return { page, vin: null, year, make, model, isValid: true };
+  }
+
+  return { page, vin: null, year: null, make: null, model: null, isValid: false };
+}
+
+let lastHandledHash = null;
+
+async function handleRouteFromHash(isInitialLoad = false) {
+  const currentHash = window.location.hash;
+  if (!isInitialLoad && currentHash === lastHandledHash) return;
+  lastHandledHash = currentHash;
+
+  const parsed = parseHash(currentHash);
+  if (!parsed.isValid) {
+    history.replaceState(null, "", "#/home");
+    lastHandledHash = "#/home";
+    navigateTo("home", false);
+    return;
+  }
+
+  if (parsed.page === "home") {
+    if (currentHash !== "#/home") {
+      history.replaceState(null, "", "#/home");
+      lastHandledHash = "#/home";
+    }
+    navigateTo("home", false);
+    return;
+  }
+
+  // Report page with VIN
+  if (parsed.vin) {
+    if (state.vehicle && state.vehicle.vin && state.vehicle.vin.toUpperCase() === parsed.vin) {
+      navigateTo(parsed.page, false);
+      return;
+    }
+
+    const cached = state.recentVehicles.find(v => v.vin && v.vin.toUpperCase() === parsed.vin);
+    if (cached) {
+      selectVehicle(cached, false, parsed.page);
+      return;
+    }
+
+    try {
+      const container = document.getElementById("page-container");
+      if (container) {
+        container.innerHTML = `
+          <div class="loading-box" style="padding: 60px 20px;">
+            <span class="spinner" style="width: 36px; height: 36px; border-width: 3px;"></span>
+            <p style="margin-top: 12px; font-weight: 500;">Looking up vehicle details from NHTSA…</p>
+          </div>
+        `;
+      }
+      const decoded = await decodeVin(parsed.vin);
+      selectVehicle(decoded, false, parsed.page);
+    } catch (err) {
+      console.warn("Failed to decode vehicle from hash:", err.message || err);
+      history.replaceState(null, "", "#/home");
+      lastHandledHash = "#/home";
+      navigateTo("home", false);
+    }
+    return;
+  }
+
+  // Report page with Year / Make / Model
+  if (parsed.year && parsed.make && parsed.model) {
+    if (state.vehicle && !state.vehicle.vin &&
+        state.vehicle.year === parsed.year &&
+        state.vehicle.make.toLowerCase() === parsed.make.toLowerCase() &&
+        state.vehicle.model.toLowerCase() === parsed.model.toLowerCase()) {
+      navigateTo(parsed.page, false);
+      return;
+    }
+
+    const cached = state.recentVehicles.find(v =>
+      !v.vin &&
+      v.year === parsed.year &&
+      v.make.toLowerCase() === parsed.make.toLowerCase() &&
+      v.model.toLowerCase() === parsed.model.toLowerCase()
+    );
+    if (cached) {
+      selectVehicle(cached, false, parsed.page);
+      return;
+    }
+
+    const vehicle = {
+      vin: "",
+      year: parsed.year,
+      make: parsed.make,
+      model: parsed.model,
+      trim: "",
+      bodyClass: "",
+      engineDisplacement: "",
+      engineConfig: "",
+      fuelType: "",
+      driveType: "",
+      plantCountry: "",
+      plantCity: "",
+      errorCode: "0",
+      errorText: null
+    };
+    selectVehicle(vehicle, false, parsed.page);
+    return;
+  }
+
+  history.replaceState(null, "", "#/home");
+  lastHandledHash = "#/home";
+  navigateTo("home", false);
+}
+
+function navigateTo(pageId, pushHistory = true) {
   state.currentPage = pageId;
   closeMobileNav();
   updateNavSelection();
   renderActiveView();
-  // Scroll to top
+
   const main = document.getElementById("main-content");
   if (main) main.scrollTop = 0;
+
+  if (pushHistory) {
+    const targetHash = buildHash(pageId, state.vehicle);
+    if (window.location.hash !== targetHash) {
+      lastHandledHash = targetHash;
+      history.pushState(null, "", targetHash);
+    }
+  }
 }
 
 function updateNavSelection() {
@@ -1463,26 +1686,96 @@ function updateNavSelection() {
   }
 }
 
-function closeMobileNav() {
+function syncNavDrawerState() {
+  const isDesktop = window.innerWidth >= 1024;
+  const drawer = document.getElementById("nav-drawer");
+  const toggleBtn = document.getElementById("menu-toggle-btn");
+  const shell = document.getElementById("app-shell");
+  if (!drawer || !toggleBtn) return;
+
+  if (isDesktop) {
+    closeMobileNav(false);
+    const isCollapsed = shell && shell.classList.contains("nav-collapsed");
+    toggleBtn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+    if (isCollapsed) {
+      drawer.setAttribute("inert", "");
+    } else {
+      drawer.removeAttribute("inert");
+    }
+  } else {
+    const isOpen = drawer.classList.contains("open");
+    toggleBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    if (isOpen) {
+      drawer.removeAttribute("inert");
+    } else {
+      drawer.setAttribute("inert", "");
+    }
+  }
+}
+
+function handleMenuToggle() {
+  const isDesktop = window.innerWidth >= 1024;
+  if (isDesktop) {
+    const shell = document.getElementById("app-shell");
+    const toggleBtn = document.getElementById("menu-toggle-btn");
+    const drawer = document.getElementById("nav-drawer");
+    if (shell) {
+      shell.classList.toggle("nav-collapsed");
+      const isCollapsed = shell.classList.contains("nav-collapsed");
+      if (toggleBtn) toggleBtn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+      if (drawer) {
+        if (isCollapsed) drawer.setAttribute("inert", "");
+        else drawer.removeAttribute("inert");
+      }
+    }
+  } else {
+    toggleMobileNav();
+  }
+}
+
+function openMobileNav() {
   const drawer = document.getElementById("nav-drawer");
   const backdrop = document.getElementById("nav-backdrop");
   const toggleBtn = document.getElementById("menu-toggle-btn");
-  if (drawer) drawer.classList.remove("open");
+  if (drawer) {
+    drawer.classList.add("open");
+    drawer.removeAttribute("inert");
+  }
+  if (backdrop) backdrop.classList.add("open");
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
+
+  // Move focus to first nav link
+  const firstLink = drawer ? drawer.querySelector(".nav-link") : null;
+  if (firstLink) {
+    firstLink.focus();
+  }
+}
+
+function closeMobileNav(returnFocusToToggle = false) {
+  const drawer = document.getElementById("nav-drawer");
+  const backdrop = document.getElementById("nav-backdrop");
+  const toggleBtn = document.getElementById("menu-toggle-btn");
+  if (drawer) {
+    drawer.classList.remove("open");
+    if (window.innerWidth < 1024) {
+      drawer.setAttribute("inert", "");
+    }
+  }
   if (backdrop) backdrop.classList.remove("open");
   if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
+
+  if (returnFocusToToggle && toggleBtn) {
+    toggleBtn.focus();
+  }
 }
 
 function toggleMobileNav() {
   const drawer = document.getElementById("nav-drawer");
-  const backdrop = document.getElementById("nav-backdrop");
-  const toggleBtn = document.getElementById("menu-toggle-btn");
   const isOpen = drawer && drawer.classList.contains("open");
   if (isOpen) {
-    closeMobileNav();
+    closeMobileNav(true);
   } else {
-    if (drawer) drawer.classList.add("open");
-    if (backdrop) backdrop.classList.add("open");
-    if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
+    openMobileNav();
   }
 }
 
@@ -1491,12 +1784,18 @@ function toggleMobileNav() {
 // ==========================================
 
 function setupEventListeners() {
-  // Mobile Nav Toggle
+  // Mobile Nav Toggle & Desktop Nav Collapse
   const toggleBtn = document.getElementById("menu-toggle-btn");
-  if (toggleBtn) toggleBtn.addEventListener("click", toggleMobileNav);
+  if (toggleBtn) toggleBtn.addEventListener("click", handleMenuToggle);
 
   const backdrop = document.getElementById("nav-backdrop");
-  if (backdrop) backdrop.addEventListener("click", closeMobileNav);
+  if (backdrop) {
+    backdrop.addEventListener("click", () => {
+      closeMobileNav(true);
+    });
+  }
+
+  window.addEventListener("resize", syncNavDrawerState);
 
   // Home brand logo click
   const brandLink = document.getElementById("brand-home-link");
@@ -1528,7 +1827,7 @@ function setupEventListeners() {
     });
   }
 
-  // About Dialog
+  // About Dialog Focus Handling
   const aboutBtn = document.getElementById("about-btn");
   const aboutModal = document.getElementById("about-modal");
   const aboutClose = document.getElementById("about-close-btn");
@@ -1538,6 +1837,9 @@ function setupEventListeners() {
     if (aboutModal) {
       aboutModal.removeAttribute("hidden");
       aboutModal.style.display = "grid";
+      if (aboutClose) {
+        aboutClose.focus();
+      }
     }
   };
 
@@ -1545,6 +1847,9 @@ function setupEventListeners() {
     if (aboutModal) {
       aboutModal.setAttribute("hidden", "");
       aboutModal.style.display = "none";
+      if (aboutBtn) {
+        aboutBtn.focus();
+      }
     }
   };
 
@@ -1556,11 +1861,28 @@ function setupEventListeners() {
       if (e.target === aboutModal) closeAbout();
     });
   }
+
   // Close on Escape key
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && aboutModal && !aboutModal.hasAttribute("hidden") && aboutModal.style.display !== "none") {
-      closeAbout();
+    if (e.key === "Escape") {
+      const drawer = document.getElementById("nav-drawer");
+      if (drawer && drawer.classList.contains("open")) {
+        closeMobileNav(true);
+        return;
+      }
+      if (aboutModal && !aboutModal.hasAttribute("hidden") && aboutModal.style.display !== "none") {
+        closeAbout();
+        return;
+      }
     }
+  });
+
+  // Routing listeners for Back / Forward
+  window.addEventListener("popstate", () => {
+    handleRouteFromHash(false);
+  });
+  window.addEventListener("hashchange", () => {
+    handleRouteFromHash(false);
   });
 }
 
@@ -1606,11 +1928,11 @@ function fallbackCopy(text, successMessage) {
 // 8. Vehicle Selection Handler
 // ==========================================
 
-function selectVehicle(vehicle) {
+function selectVehicle(vehicle, pushHistory = true, targetPage = "overview") {
   const cleanVehicle = sanitizeVehicleSpecs(vehicle);
   state.vehicle = cleanVehicle;
 
-  // Load checklist progress saved for this specific vehicle (starts fresh for new cars)
+  // Load checklist progress saved for this specific vehicle
   loadChecklistForVehicle(cleanVehicle);
 
   // Reset recalls and complaints state immediately and invalidate any in-flight fetches
@@ -1619,17 +1941,26 @@ function selectVehicle(vehicle) {
   state.recallsState = createEmptyRecallsState(true);
   state.complaintsState = createEmptyComplaintsState(true);
   
-  // Add to recents
-  const label = `${cleanVehicle.year} ${cleanVehicle.make} ${cleanVehicle.model}`;
-  state.recentVehicles = state.recentVehicles.filter(v => 
-    !(v.year === cleanVehicle.year && v.make === cleanVehicle.make && v.model === cleanVehicle.model)
-  );
+  // Add to recents (keyed by VIN when present, or year/make/model when not)
+  const label = cleanVehicle.vin
+    ? `${cleanVehicle.year} ${cleanVehicle.make} ${cleanVehicle.model} · …${cleanVehicle.vin.slice(-6)}`
+    : `${cleanVehicle.year} ${cleanVehicle.make} ${cleanVehicle.model}`;
+  
+  if (cleanVehicle.vin) {
+    state.recentVehicles = state.recentVehicles.filter(v => 
+      !v.vin || v.vin.toUpperCase() !== cleanVehicle.vin.toUpperCase()
+    );
+  } else {
+    state.recentVehicles = state.recentVehicles.filter(v => 
+      v.vin || !(v.year === cleanVehicle.year && v.make.toLowerCase() === cleanVehicle.make.toLowerCase() && v.model.toLowerCase() === cleanVehicle.model.toLowerCase())
+    );
+  }
   state.recentVehicles.unshift({ ...cleanVehicle, label });
   if (state.recentVehicles.length > 5) state.recentVehicles.pop();
   saveRecentVehicles();
 
-  // Navigate to overview first so both recalls and complaints show loading right away
-  navigateTo("overview");
+  // Navigate to target page (default "overview")
+  navigateTo(targetPage, pushHistory);
 
   // Trigger recall check (which also loads complaints once matched, or falls back to vehicle.model)
   loadRecallsForVehicle(cleanVehicle);
@@ -1791,7 +2122,7 @@ function renderHomePage(container) {
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
           ${state.recentVehicles.map((v, i) => `
             <button type="button" class="btn btn-secondary btn-sm recent-vehicle-btn" data-recent-index="${i}">
-              🚗 ${escapeHtml(v.year)} ${escapeHtml(v.make)} ${escapeHtml(v.model)}
+              🚗 ${escapeHtml(v.label || `${v.year} ${v.make} ${v.model}`)}
             </button>
           `).join("")}
         </div>
@@ -1836,11 +2167,70 @@ function renderHomePage(container) {
   setupHomePageInteractions(page);
 }
 
+let currentVinLookupId = 0;
+
 function setupHomePageInteractions(page) {
   const vinInput = page.querySelector("#vin-input");
   const vinForm = page.querySelector("#vin-search-form");
   const vinHint = page.querySelector("#vin-format-hint");
   const vinSubmitBtn = page.querySelector("#vin-submit-btn");
+
+  function setVinLookupState(loading) {
+    if (vinSubmitBtn) {
+      vinSubmitBtn.disabled = loading;
+      if (loading) {
+        vinSubmitBtn.innerHTML = `<span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span><span>Decoding…</span>`;
+      } else {
+        vinSubmitBtn.innerHTML = `<span>Look up</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+      }
+    }
+    page.querySelectorAll(".sample-vin-btn").forEach(btn => {
+      btn.disabled = loading;
+    });
+  }
+
+  async function performVinLookup(vin) {
+    const cleanVin = (vin || "").trim().toUpperCase();
+    if (cleanVin.length !== 17 || /[IOQ]/.test(cleanVin) || !/^[A-HJ-NPR-Z0-9]{17}$/.test(cleanVin)) {
+      if (vinHint) {
+        vinHint.className = "form-hint error";
+        vinHint.textContent = "Please enter a valid 17-character VIN without the letters I, O, or Q.";
+      }
+      if (vinInput) vinInput.focus();
+      return;
+    }
+
+    const lookupId = ++currentVinLookupId;
+    setVinLookupState(true);
+
+    try {
+      const decoded = await decodeVin(cleanVin);
+      if (lookupId !== currentVinLookupId) {
+        return; // Stale lookup, discard
+      }
+      selectVehicle(decoded);
+    } catch (err) {
+      if (lookupId !== currentVinLookupId) {
+        return; // Stale lookup, discard
+      }
+      if (vinHint) {
+        vinHint.className = "form-hint error";
+        if (err && err.isNetworkError) {
+          const netMsg = "Couldn't reach NHTSA. Check your connection and try again.";
+          vinHint.textContent = netMsg;
+          showToast(netMsg);
+        } else {
+          const msg = (err && err.message) || "Could not decode this VIN. Double-check it against the car and title.";
+          vinHint.textContent = msg;
+          showToast(msg);
+        }
+      }
+    } finally {
+      if (lookupId === currentVinLookupId) {
+        setVinLookupState(false);
+      }
+    }
+  }
 
   // Real-time VIN format checking
   if (vinInput && vinHint) {
@@ -1867,51 +2257,23 @@ function setupHomePageInteractions(page) {
       }
     });
 
-    vinForm.addEventListener("submit", async (e) => {
+    vinForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const vin = vinInput.value.trim().toUpperCase();
-      if (vin.length !== 17 || /[IOQ]/.test(vin) || !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
-        vinHint.className = "form-hint error";
-        vinHint.textContent = "Please enter a valid 17-character VIN without the letters I, O, or Q.";
-        vinInput.focus();
-        return;
-      }
-
-      vinSubmitBtn.disabled = true;
-      vinSubmitBtn.innerHTML = `<span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span><span>Decoding…</span>`;
-
-      try {
-        const decoded = await decodeVin(vin);
-        selectVehicle(decoded);
-      } catch (err) {
-        vinHint.className = "form-hint error";
-        if (err && err.isNetworkError) {
-          const netMsg = "Couldn't reach NHTSA. Check your connection and try again.";
-          vinHint.textContent = netMsg;
-          showToast(netMsg);
-        } else {
-          const msg = (err && err.message) || "Could not decode this VIN. Double-check it against the car and title.";
-          vinHint.textContent = msg;
-          showToast(msg);
-        }
-      } finally {
-        vinSubmitBtn.disabled = false;
-        vinSubmitBtn.innerHTML = `<span>Look up</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
-      }
+      if (vinSubmitBtn && vinSubmitBtn.disabled) return;
+      performVinLookup(vinInput.value);
     });
   }
 
   // Sample VIN buttons
   page.querySelectorAll(".sample-vin-btn").forEach(btn => {
     btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       const vin = btn.getAttribute("data-vin");
       if (vinInput) {
         vinInput.value = vin;
         vinInput.dispatchEvent(new Event("input"));
       }
-      if (vinForm) {
-        vinForm.dispatchEvent(new Event("submit"));
-      }
+      performVinLookup(vin);
     });
   });
 
